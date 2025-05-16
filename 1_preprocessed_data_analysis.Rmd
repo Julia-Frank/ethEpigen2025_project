@@ -1,0 +1,112 @@
+---
+title: "1_data_import"
+author: "Julia Frank, Jesslyn Jesslyn, Sara Leka"
+date: "2025-05-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Analyse preprocessed data
+
+This Rmarkdown file takes a look at the normalized genome-wide signal coverage tracks that the paper provided as bigWig files [here](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE173676).
+
+## **Load packages & data**
+
+At first, all necessary packages were installed and loaded.
+
+```{r}
+# R version  <-- check this
+# All packages are updated to the latest version. <-- check this
+suppressPackageStartupMessages({
+  library(GenomicRanges)
+  library(rtracklayer)
+  library(epiwraps)
+  library(AnnotationHub)
+  library(MotifDb)
+  library(universalmotif)
+  library(ensembldb)
+  library(ggplot2)
+})
+
+# Get Ensembl Transcript DB for Mouse
+ah <- AnnotationHub(localHub=TRUE)
+ensdb <- ah[["AH89211"]] # mouse ensembldb object --> maybe use a newer one later on
+```
+
+Load in all normalized genome-wide signal coverage tracks provided by the paper, excluding *Young MuSC 3*. That particular dataset contains ATAC-seq data from 5,000 muscle stem cells (MuSCs) and is not a myofiber sample. While we exclude it from the current analysis, it could later serve as a valuable reference point to explore how chromatin accessibility changes during the differentiation from MuSCs to mature myofibers.
+
+The included data consist of:
+
+-   2 uninjured myofibers (UI1-2)
+
+-   3 injured myofibers (samples taken 7 days after injury) (I1-3)
+
+-   3 dystrophic (MDX) myofibers (mouse model for Duchenne muscular dystrophy) (MDX1-3)
+
+-   4 wild-type (WT) myofibers (WT1-4)
+
+```{r}
+# Define folder structure and filenames
+input_folder <-"preprocessed_data_paper"
+
+tracks1 <- list(
+  UI1=paste0(input_folder, "/GSM5273557_UI1_15_SOL893A45-1.bw"),
+  UI2=paste0(input_folder, "/GSM5273558_UI2_23_SOL893A53-1.bw"),
+  I1=paste0(input_folder, "/GSM5273559_I1_14_SOL893A44-1.bw"),
+  I2=paste0(input_folder, "/GSM5273560_I2_16_SOL893A46-1.bw"),
+  I3=paste0(input_folder, "/GSM5273561_I3_21_SOL893A51-1.bw")
+)
+tracks2 <- list(
+  MDX1=paste0(input_folder, "/GSM5502605_MDX12_SOL893A14.bw"),
+  MDX2=paste0(input_folder, "/GSM5502606_MDX24_SOL893A21.bw"),
+  MDX3=paste0(input_folder, "/GSM5502607_MDX33_SOL893A28.bw"),
+  WT1=paste0(input_folder, "/GSM5502608_WT1_SOL1313A1.bw"),
+  WT2=paste0(input_folder, "/GSM5502609_WT2_SOL1313A3.bw"),
+  WT3=paste0(input_folder, "/GSM5502610_WT3_SOL1313A5.bw"),
+  WT4=paste0(input_folder, "/GSM5502611_WT4_SOL1313A8.bw")
+)
+```
+
+I think the injured & uninjured ones are all in one batch and the same goes for MDX & WT. So, maybe do batch correction to compare all four. (Please recheck this!)
+
+## Generate some plots to check that we can access the tracks
+
+Generate a plot to figure out if we can actually look at the data (delete later on). To make it easy I just copied the code of his tutorial of week 11.
+
+```{r}
+# Obtaining the promoter coordinates of chromosome 1
+chr1 <-  GRanges(seqnames=Rle(c("1")), 
+                          ranges = IRanges(1, end=195471971))
+
+# We define promoters as the regions +/- 200 of the TSS
+promoterRegions <- promoters(ensdb, upstream=200, downstream=200,
+                             filter=GRangesFilter(chr1))
+# gene body coordinates
+geneBodies <- genes(ensdb, filter=GRangesFilter(chr1))
+```
+
+```{r}
+seqlevelsStyle(promoterRegions) <- "UCSC"
+# for the sake of speed, we'll plot only the first 2000 promoters
+smp <- signal2Matrix(tracks1, promoterRegions[1:2000], 
+                       extend=1000, w=20, 
+                       limit=c(0,100),
+                       smooth=TRUE)
+
+plotEnrichedHeatmaps(smp, 
+                     axis_name="TSS",
+                     multiScale=TRUE)
+
+# for the sake of speed, we'll plot only the first 2000 promoters
+smp <- signal2Matrix(tracks2, promoterRegions[1:2000], 
+                       extend=1000, w=20, 
+                       limit=c(0,100),
+                       smooth=TRUE)
+
+plotEnrichedHeatmaps(smp, 
+                     axis_name="TSS",
+                     multiScale=TRUE)
+```
