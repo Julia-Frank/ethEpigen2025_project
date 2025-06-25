@@ -1,0 +1,22 @@
+---
+title: "Bioinformatics Approaches to Regulatory Genomics and Epigenomics 2025 Project"
+author: "Julia Frank, Jesslyn Jesslyn, Sara Leka"
+date: "2025-06-24"
+output: html_document
+bibliography: project_references.bib
+link-citations: TRUE 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Myofibers are the main structural and functional units of skeletal muscle. They are highly adaptive cells that vary widely in size, metabolic activity, and functional properties. This adaptability is reflected in their transcriptomic and epigenomic landscapes, which can shift significantly in response to physiological and pathological conditions. Understanding these regulatory changes offers insights into how skeletal muscle adapts, regenerates, and deteriorates under different conditions.\
+In this context, single-cell ATAC-seq has emerged as a powerful tool to study chromatin accessibility at the level of individual nuclei. When applied to isolated myonuclei, this technique provides sufficient resolution and depth for downstream epigenetic analysis. This approach was conducted in the study "Application of ATAC-Seq for genome-wide analysis of the chromatin state at single myofiber resolution" by [@sahinyan2022atac]. In their work, they used single-myofiber ATAC-seq (smfATAC-seq) to profile chromatin accessibility in myofibers under various physiological and disease conditions.\
+The aim of our project is to reproduce and critically evaluate key aspects of that study. We focus on two biologically relevant comparisons: uninjured (UI) vs. injured (I) myofibers, and wild-type (WT) vs. dystrophic (MDX) myofibers. The UI vs. I comparison allows us to explore how myofibers change their chromatin landscape during regeneration following cardiotoxin-induced injury. The WT vs. MDX comparison highlights the epigenomic consequences of Duchenne Muscular Dystrophy (DMD), for which the MDX mouse serves as a widely used model.\
+Our pipeline covers the full pre-processing of raw ATAC-seq data, including quality control, alignment, filtering, peak calling, and normalization. We then assess data quality and consistency through correlation analysis, followed by differential accessibility analysis, gene set enrichment analysis and motif discovery to interpret the biological significance of the observed changes.
+
+
+#### References
