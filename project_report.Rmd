@@ -16,7 +16,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # Introduction
 
 Myofibers are the main structural and functional units of skeletal muscle. They are highly adaptive cells that vary widely in size, metabolic activity, and functional properties. This adaptability is reflected in their transcriptomic and epigenomic landscapes, which can shift significantly in response to physiological and pathological conditions. Understanding these regulatory changes offers insights into how skeletal muscle adapts, regenerates, and deteriorates under different conditions.\
-In this context, single-cell ATAC-seq has emerged as a powerful tool to study chromatin accessibility at the level of individual nuclei. When applied to isolated myonuclei, this technique provides sufficient resolution and depth for downstream epigenetic analysis. This approach was conducted in the study "Application of ATAC-Seq for genome-wide analysis of the chromatin state at single myofiber resolution" by [@sahinyan2022atac]. In their work, they used single-myofiber ATAC-seq (smfATAC-seq) to profile chromatin accessibility in myofibers under various physiological and disease conditions.\
+In this context, ATAC-seq data is a powerfool tool to study chromatin accessibility. When applied to single myofibers, this technique provides sufficient resolution and depth for downstream epigenetic analysis without the presence of confounding muscle resident cell types. This approach was conducted in the study "Application of ATAC-Seq for genome-wide analysis of the chromatin state at single myofiber resolution" by [@sahinyan2022atac]. In their work, they used single-myofiber ATAC-seq (smfATAC-seq) to profile chromatin accessibility in myofibers under various physiological and disease conditions.\
 The aim of our project is to reproduce and critically evaluate key aspects of that study. We focus on two biologically relevant comparisons: uninjured (UI) vs. injured (I) myofibers, and wild-type (WT) vs. dystrophic (MDX) myofibers. The UI vs. I comparison allows us to explore how myofibers change their chromatin landscape during regeneration following cardiotoxin-induced injury. The WT vs. MDX comparison highlights the epigenomic consequences of Duchenne Muscular Dystrophy (DMD), for which the MDX mouse serves as a widely used model.\
 Our pipeline covers the full pre-processing of raw ATAC-seq data, including quality control, alignment, filtering, peak calling, and normalization. We then assess data quality and consistency through correlation analysis, followed by differential accessibility analysis, gene set enrichment analysis and motif discovery to interpret the biological significance of the observed changes.
 
@@ -49,29 +49,35 @@ suppressPackageStartupMessages({
 
 ## The data
 
-maybe explain here where data is from, what each category is, and 2 different batches –\> decided to do it as 2 seperat experiments
+The pipeline processes single myofiber ATAC-seq data obtained from the EDL muscle of Mus musculus. The raw data is available through the [SRA Run Selector](https://www.ncbi.nlm.nih.gov/Traces/study/?acc=PRJNA726576&o=acc_s%3Aa) while the authors provide just their processed coverage tracks on [GEO](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE173676)\
+The dataset is divided into two distinct and independent experiments, each representing a separate biological context and likely processed at different times. \
 
-Experiment 1:
+Experiment 1 - muscle regeneration:\
 
--   2 uninjured myofibers (UI1-2)
+- **UI1–2**: 2 uninjured control myofibers.
+- **I1–3**: 3 injured myofibers (harvested 7 days after acute injury, representing the regenerating state).\
 
--   3 injured myofibers (samples taken 7 days after injury) (I1-3)
+Experiment 2 – muscular dystrophy:\
 
-Experiment 2:
+- **MDX1–3**: 3 myofibers from MDX mice, a standard mouse model for Duchenne muscular dystrophy (DMD), characterized by chronic muscle degeneration.
+- **WT1–4**: 4 myofibers from wild-type (WT) healthy control mice.
 
--   3 dystrophic (MDX) myofibers (mouse model for Duchenne muscular dystrophy) (MDX1-3)
-
--   4 wild-type (WT) myofibers (WT1-4)
+A joint analysis across all four conditions would have been informative, but the experimental design introduces batch effects that make it difficult to distinguish technical variation from true biological differences. In fact, there is not a common condition across the two experiments. While a possible solution to overcome this would have been combining the UI data from the first batch with the WT data from the second one, assuming they are the same would have been risky given that the authors of the data do not clearly state this equivalence. \
+To mantain clarity and avoid confounding due to batch effects, the two experimental setups are therefore analyzed independently: one comparing uninjured and injured myofibers, and the other comparing WT and MDX myofibers.
 
 ## Preprocessing
 
-Since preprocessing is quite computationally and memory intensive, we performed it on Euler. All code scripts and resulting data are available in the `preprocessing` folder. The coverage tracks were too large for GitHub, so we uploaded them to [Google Drive](https://drive.google.com/drive/folders/1OQhd_apUdG5OcCcjdzure0dNIePGcs8L?usp=sharing). If you want to rerun the R script, please download the coverage tracks and place them in `preprocessing`\>`results`\>`tracks`.
+In order to generate all the data needed downstream (peaks, counts, coverage tracks) we processed the raw data. Since preprocessing is quite computationally and memory intensive, we performed it on Euler. All code scripts and resulting data are available in the `preprocessing` folder. The coverage tracks were too large for GitHub, so we uploaded them to [Google Drive](https://1drv.ms/f/c/ad47ab1cb526b6da/EiGJACKkCqhAqehU3_HI-AMBXvwKSJhkNprIwYIos2Fupg?e=tbCstp). If you want to rerun the R script, please download the coverage tracks and place them in `preprocessing`\>`results`\>`tracks`.
 
 ### 1. Trimming
+
+Raw `.sra` files were converted to `.fastq.gz`, followed by adapter trimming using the `trimmomatic` package. Specifically, Illumina NexteraPE-PE adapters were removed. Quality control was performed both before and after trimming using `FastQC` and summarized with `MultiQC`.
 
 maybe add pictures of the QC report?
 
 ### 2. Alignment
+
+Trimmed reads were aligned to the mm10 mouse genome using `bowtie2`, followed by filtering, sorting, and indexing with `samtools`. Only uniquely mapping reads were retained. The `.bam` files were then filtered for high-quality, uniquely mapped reads (MAPQ ≥ 20), and PCR duplicates were removed using `Picard`. Read groups were added to comply with downstream processing tools. Final sorting and indexing was performed with `samtools`. 
 
 maybe add the statistic of how much mapping as a nice plot, something like this:
 
@@ -79,11 +85,15 @@ maybe add the statistic of how much mapping as a nice plot, something like this:
 
 ### 3. Peak calling
 
+Peaks were called using `MACS3` on each individual `.bam` file, generating `.narrowPeak` files representing regions of open chromatin.
+
 ### 4. Count Matrix Generation
 
-To compare chromatin accessibility between conditions, we first combined the peak files from all replicates of each experiment (uninjured vs. injured and WT vs. MDX). We then merged overlapping peaks to create a consensus peak set for each comparison. These consensus peaks represent regions that were accessible in at least one of the samples. Next, we counted how many reads from each sample overlapped with each consensus peak to create a count matrix.
+To compare chromatin accessibility between conditions, we first combined the peak files from all replicates of each experiment (UI vs. I and WT vs. MDX). We then merged overlapping peaks to create a consensus peak set for each comparison. These consensus peaks represent regions that were accessible in at least one of the samples. Next, we counted how many reads from each sample overlapped with each consensus peak to create a count matrix.
 
 ### 5. Coverage Track Generation
+
+For visualization and downstream analyses, normalized bigWig coverage tracks were generated using `bamCoverage` from the `deepTools` suite. 
 
 ### 6. Load the Preprocessed Data
 
