@@ -139,7 +139,7 @@ ensdb <- ah[["AH89211"]]
 twobit <- ah[["AH88475"]]
 ```
 
-# Motif preparation
+# Motif preparation (from week8 solution)
 ```{r}
 ## Pull only mouse HOCOMOCOv10, convert
 motifs <- MotifDb::query(MotifDb, c("Mmusculus", "HOCOMOCOv10"))
@@ -195,11 +195,4 @@ motif_analysis_by_group(ui_peaks, i_peaks, "ui_i_results.rds", "ui_results.rds",
 # Visualize top 10 enriched motifs
 ```{r, fig.width=12, fig.height=10, dpi=150}
 motif_visualization("i_results.rds")
-```
-
-```{r}
-  res <- readRDS("i_results.rds")
-  filtered_res <- res[res$adj.pvalue < 0.05, ]
-  filtered_res<- filtered_res[order(filtered_res$adj.pvalue, decreasing = FALSE), ]
-  universalmotif::view_motifs(motifs[filtered_res[1:10, ]$motif_id])
 ```
