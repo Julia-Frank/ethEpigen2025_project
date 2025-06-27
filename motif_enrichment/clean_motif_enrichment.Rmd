@@ -1,0 +1,205 @@
+---
+title: "clean_motif_enrichment"
+output: html_document
+date: "2025-06-27"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+suppressPackageStartupMessages({
+  library(epiwraps)
+  library(MotifDb)
+  library(universalmotif)
+  library(data.table)
+  library(GenomicRanges)
+  library(TFBSTools)
+  library(AnnotationHub)
+  library(Biostrings) # for handling sequences
+})
+```
+
+# Required functions
+```{r}
+## Function to merge replicate peaks in each condition
+merge_replicates_union <- function(gr_list) {
+  # Combine all peaks into one GRanges (concatenate)
+  all_peaks <- do.call(c, gr_list)
+  
+  # Sort peaks by seqnames and start (required by reduce)
+  all_peaks <- GenomicRanges::sort(all_peaks)
+  
+  # Reduce to get union regions
+  merged_peaks <- reduce(all_peaks)
+  
+  # Find overlaps between merged peaks and original peaks to map p-values
+  overlaps <- findOverlaps(merged_peaks, all_peaks)
+  
+  # For each merged peak, get mean p-value from overlapping original peaks
+  pvals <- tapply(all_peaks$pValue[subjectHits(overlaps)], queryHits(overlaps), mean, na.rm = TRUE)
+  
+  # Create final GRanges with merged peaks and p-values
+  merged_peaks$mean_pValue <- NA_real_
+  merged_peaks$mean_pValue[as.numeric(names(pvals))] <- pvals
+  
+  return(merged_peaks)
+}
+
+## Function to clean granges
+clean_seqlevels <- function(granges, style = "NCBI"){
+  seqlevelsStyle(granges) <- style
+  granges <- keepStandardChromosomes(granges, pruning.mode = "coarse")
+  return(granges)
+}
+
+## Function to obtain common and unique peaks between two GRanges objects
+obtain_peaks <- function(cond1, cond2){
+  # Find overlaps
+  hits <- findOverlaps(cond1, cond2)
+  
+  # Common peaks: intersect overlapping regions
+  common_cond1 <- cond1[(queryHits(hits))]
+  common_cond2  <- cond2[(subjectHits(hits))]
+  common_peaks <- pintersect(common_cond1, common_cond2) #since exact peak region used
+  common_peaks <- clean_seqlevels(common_peaks)
+  
+  # Unique peaks for cond1 (non-overlapping)
+  cond1_peaks <- cond1[-unique(queryHits(hits))]
+  cond1_peaks <- clean_seqlevels(cond1_peaks)
+  
+  # Unique peaks for cond2 (non-overlapping)
+  cond2_peaks <- cond2[-unique(subjectHits(hits))]
+  cond2_peaks <- clean_seqlevels(cond2_peaks)
+  
+  # Return as named list
+  return(list(common = common_peaks, peaks1 = cond1_peaks, peaks2 = cond2_peaks))
+}
+
+## Function to obtain peaks that overlap with promoters (±5 kb around the TSS)
+overlap_proms <- function(peaks_orig){
+  overlap_peaks <- peaks_orig[overlapsAny(peaks_orig, proms, type="within"),]
+  # Rank by decreasing
+  peaks_ranked <- overlap_peaks[order(mcols(overlap_peaks)$mean_pValue, decreasing = TRUE)]
+  # Take top N peaks, e.g. top 1000
+  top_peaks <- peaks_ranked[1:50]
+  
+  seqs <- memes::get_sequence(top_peaks, twobit)
+
+  return(seqs)
+}
+
+
+## Function to obtain and save motifs
+obtain_motifs <- function(seqs, filename){
+  res <- memes::runAme(seqs, database=convert_motifs(motifs), meme_path="/home/jesslyn/meme/bin")
+  saveRDS(res, file=filename)
+  return(res)
+}
+
+## Function to run motif enrichment analysis
+motif_analysis_by_group <- function(cond1, cond2, filename_common, filename_cond1, filename_cond2){
+  # Obtain common and unique peaks for the conditions
+  peaks_results <- obtain_peaks(cond1, cond2)
+  
+  # Prepare the sequences
+  common_seqs <- overlap_proms(peaks_results$common)
+  cond1_seqs <- overlap_proms(peaks_results$peaks1)
+  cond2_seqs <- overlap_proms(peaks_results$peaks2)
+  
+  # Motif enrichment analysis for each of the group
+  ## Obtain motifs from final peaks (exact peak region)
+  res_common <- obtain_motifs(common_seqs, filename_common)
+  res_cond1 <- obtain_motifs(cond1_seqs, filename_cond1)
+  res_cond2 <- obtain_motifs(cond2_seqs, filename_cond2)
+}
+
+## Function to visulize motifs
+motif_visualization <- function(file_name){
+  res <- readRDS(file_name)
+  filtered_res <- res[res$adj.pvalue < 0.05, ]
+  filtered_res<- filtered_res[order(filtered_res$adj.pvalue, decreasing = FALSE), ]
+  universalmotif::view_motifs(motifs[filtered_res[1:10, ]$motif_id])
+}
+```
+
+# Load required databases
+```{r}
+ah <- AnnotationHub()
+
+## To obtain ensdb name
+ensdb_results <- AnnotationHub::query(ah, c("GRCm38", "EnsDB"))
+
+## To obtain twobit name
+twobit_results <- AnnotationHub::query(ah, c("GRCm38", "twobit", "dna.primary_assembly"))
+
+## Extract ensdb and twobit files
+ensdb <- ah[["AH89211"]]
+twobit <- ah[["AH88475"]]
+```
+
+# Motif preparation
+```{r}
+## Pull only mouse HOCOMOCOv10, convert
+motifs <- MotifDb::query(MotifDb, c("Mmusculus", "HOCOMOCOv10"))
+motifs <- do.call(TFBSTools::PWMatrixList, setNames(
+  universalmotif::convert_motifs(motifs, class="TFBSTools-PWMatrix"),
+  mcols(motifs)$geneSymbol))
+## Subset the motifs to only the high quality ones in the following way
+motifNames <- unique(names(motifs))
+motifs <- lapply(motifNames, function(motif){
+  redundant_motifs <- motifs[names(motifs)==motif]
+  ids <- unlist(lapply(redundant_motifs, function(m) m@ID))
+  quality_rating <- unlist(tstrsplit(ids, split=".", keep=3, fixed=TRUE))
+  motif <- redundant_motifs[[which(quality_rating==min(quality_rating))]]
+  motif
+})
+names(motifs) <- motifNames
+motifs <- do.call(PWMatrixList, motifs)
+```
+
+# Define promoter regions (±5 kb around the TSS)
+```{r}
+proms <- promoters(transcripts(ensdb), upstream = 5000, downstream = 5000)
+proms <- keepStandardChromosomes(proms, pruning.mode = "coarse")
+```
+
+# Prepare peaks
+```{r}
+# Import peaks
+## List the files:
+peakfiles <- list.files("sara_peaks", full.names = TRUE)
+peakfiles <- peakfiles[grepl("\\.narrowPeak$", peakfiles)]
+## Give them meaningful names
+names(peakfiles) <- gsub("_[^_]+\\..*$","",basename(peakfiles))
+peaks <- lapply(peakfiles, FUN=rtracklayer::import, format="narrowPeak")
+peaks <- lapply(peaks, function(gr) {
+  seqlevelsStyle(gr) <- "NCBI"
+  gr
+})
+
+
+ui_peaks <- merge_replicates_union(list(peaks[["SRR14371953"]], peaks[["SRR14371954"]]))
+i_peaks <- merge_replicates_union(list(peaks[["SRR14371955"]], peaks[["SRR14371956"]], peaks[["SRR14371957"]]))
+mdx_peaks <- merge_replicates_union(list(peaks[["SRR15343189"]], peaks[["SRR15343190"]], peaks[["SRR15343191"]]))
+wt_peaks <- merge_replicates_union(list(peaks[["SRR15343192"]], peaks[["SRR15343193"]], peaks[["SRR15343194"]], peaks[["SRR15343195"]]))
+```
+
+# Run motif enrichment analysis
+```{r}
+motif_analysis_by_group(mdx_peaks, wt_peaks, "mdx_wt_results.rds", "mdx_results.rds", "wt_results.rds")
+motif_analysis_by_group(ui_peaks, i_peaks, "ui_i_results.rds", "ui_results.rds", "i_results.rds")
+```
+
+# Visualize top 10 enriched motifs
+```{r, fig.width=12, fig.height=10, dpi=150}
+motif_visualization("i_results.rds")
+```
+
+```{r}
+  res <- readRDS("i_results.rds")
+  filtered_res <- res[res$adj.pvalue < 0.05, ]
+  filtered_res<- filtered_res[order(filtered_res$adj.pvalue, decreasing = FALSE), ]
+  universalmotif::view_motifs(motifs[filtered_res[1:10, ]$motif_id])
+```
