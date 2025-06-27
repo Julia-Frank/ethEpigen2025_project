@@ -73,7 +73,8 @@ In order to generate all the data needed downstream (peaks, counts, coverage tra
 
 Raw `.sra` files were converted to `.fastq.gz`, followed by adapter trimming using the `trimmomatic` package. Specifically, Illumina NexteraPE-PE adapters were removed. Quality control was performed both before and after trimming using `FastQC` and summarized with `MultiQC`.
 
-maybe add pictures of the QC report?
+
+knitr::include_graphics(c("images/fastqc_adapter_content_plot.png", "images/fastqc_adapter_content_plot_post.png"))
 
 ### 2. Alignment
 
