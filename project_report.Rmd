@@ -44,6 +44,13 @@ suppressPackageStartupMessages({
   library(grid)
   library(limma)
   library(edgeR)
+  library(MotifDb)
+  library(universalmotif)
+  library(data.table)
+  library(GenomicRanges)
+  library(TFBSTools)
+  library(AnnotationHub)
+  library(Biostrings)
 })
 ```
 
@@ -564,6 +571,155 @@ res2_des <- run_deseq2(counts2[, 6:ncol(counts2)], baseline_condition = "WT", co
 ## Gene set enrichment analysis
 
 ## Motif enrichment analysis
+```{r define required functions}
+## Function to clean granges
+clean_seqlevels <- function(granges){
+  granges <- keepSeqlevels(granges, common_seqlevels, pruning.mode = "coarse")
+  return(granges)
+}
+
+## Function to obtain common and unique peaks between two GRanges objects
+obtain_peaks <- function(cond1, cond2){
+  # Find overlaps
+  hits <- findOverlaps(cond1, cond2)
+  
+  # Common peaks: intersect overlapping regions
+  common_cond1 <- cond1[(queryHits(hits))]
+  common_cond2  <- cond2[(subjectHits(hits))]
+  common_peaks <- pintersect(common_cond1, common_cond2) #since exact peak region used
+  common_peaks <- clean_seqlevels(common_peaks)
+  
+  # Unique peaks for cond1 (non-overlapping)
+  cond1_peaks <- cond1[-unique(queryHits(hits))]
+  cond1_peaks <- clean_seqlevels(cond1_peaks)
+  
+  # Unique peaks for cond2 (non-overlapping)
+  cond2_peaks <- cond2[-unique(subjectHits(hits))]
+  cond2_peaks <- clean_seqlevels(cond2_peaks)
+  
+  # Return as named list
+  return(list(common = common_peaks, peaks1 = cond1_peaks, peaks2 = cond2_peaks))
+}
+
+## Function to obtain peaks that overlap with promoters (±5 kb around the TSS)
+overlap_proms <- function(peaks_orig){
+  overlap_peaks <- peaks_orig[overlapsAny(peaks_orig, proms, type="within"),]
+  # Rank by decreasing
+  peaks_ranked <- overlap_peaks[order(mcols(overlap_peaks)$pValue, decreasing = TRUE)]
+  # Take top N peaks, e.g. top 1000
+  top_peaks <- peaks_ranked[1:1000]
+  seqlevels(top_peaks) <- sub("^chr", "", seqlevels(top_peaks))
+  seqs <- memes::get_sequence(top_peaks, twobit)
+
+  return(seqs)
+}
+
+
+## Function to obtain and save motifs
+obtain_motifs <- function(seqs, filename){
+  res <- memes::runAme(seqs, database=convert_motifs(motifs), meme_path="/home/jesslyn/meme/bin")
+  saveRDS(res, file=filename)
+  return(res)
+}
+
+## Function to run motif enrichment analysis
+motif_analysis_by_group <- function(cond1, cond2, filename_common, filename_cond1, filename_cond2){
+  # Obtain common and unique peaks for the conditions
+  peaks_results <- obtain_peaks(cond1, cond2)
+  
+  # Prepare the sequences
+  common_seqs <- overlap_proms(peaks_results$common)
+  cond1_seqs <- overlap_proms(peaks_results$peaks1)
+  cond2_seqs <- overlap_proms(peaks_results$peaks2)
+  
+  # Motif enrichment analysis for each of the group
+  ## Obtain motifs from final peaks (exact peak region)
+  res_common <- obtain_motifs(common_seqs, filename_common)
+  res_cond1 <- obtain_motifs(cond1_seqs, filename_cond1)
+  res_cond2 <- obtain_motifs(cond2_seqs, filename_cond2)
+}
+
+## Function to visualize motifs
+motif_visualization <- function(file_name, overlap_val=0.99){
+  res <- readRDS(file_name)
+  filtered_res <- res[res$adj.pvalue < 0.05, ]
+  filtered_res<- filtered_res[order(filtered_res$adj.pvalue, decreasing = FALSE), ]
+  universalmotif::view_motifs(motifs[filtered_res[1:10, ]$motif_id], 
+                              min.overlap = overlap_val, 
+                              RC.text = "", 
+                              names.pos="right")
+}
+```
+
+Load twobit data
+
+```{r}
+## To obtain twobit name
+twobit_results <- AnnotationHub::query(ah, c("GRCm38", "twobit", "dna.primary_assembly"))
+
+## Extract twobit files
+twobit <- ah[["AH88475"]]
+```
+
+Motif preparation
+```{r motif preparation}
+## Pull only mouse HOCOMOCOv10, convert
+motifs <- MotifDb::query(MotifDb, c("Mmusculus", "HOCOMOCOv10"))
+motifs <- do.call(TFBSTools::PWMatrixList, setNames(
+  universalmotif::convert_motifs(motifs, class="TFBSTools-PWMatrix"),
+  mcols(motifs)$geneSymbol))
+## Subset the motifs to only the high quality ones in the following way
+motifNames <- unique(names(motifs))
+motifs <- lapply(motifNames, function(motif){
+  redundant_motifs <- motifs[names(motifs)==motif]
+  ids <- unlist(lapply(redundant_motifs, function(m) m@ID))
+  quality_rating <- unlist(tstrsplit(ids, split=".", keep=3, fixed=TRUE))
+  motif <- redundant_motifs[[which(quality_rating==min(quality_rating))]]
+  motif
+})
+names(motifs) <- motifNames
+motifs <- do.call(PWMatrixList, motifs)
+```
+
+Define promoter regions (±5 kb around the TSS)
+```{r}
+txs <- keepSeqlevels(txs, common_seqlevels, pruning.mode = "coarse")
+proms <- promoters(txs, upstream = 5000, downstream = 5000)
+proms <- keepStandardChromosomes(proms, pruning.mode = "coarse")
+```
+
+Prepare peaks
+```{r}
+# Import peaks
+## List the files:
+peakfiles <- list.files("preprocessing/results/peaks", full.names = TRUE, recursive = TRUE)
+peakfiles <- peakfiles[grepl("\\.narrowPeak$", peakfiles)]
+## Give them meaningful names
+names(peakfiles) <- gsub("_[^_]+\\..*$","",basename(peakfiles))
+peaks <- lapply(peakfiles, FUN=rtracklayer::import, format="narrowPeak")
+peaks <- lapply(peaks, clean_seqlevels)
+
+ui_peaks <- do.call(c, list(peaks[["SRR14371953"]], peaks[["SRR14371954"]]))
+i_peaks <- do.call(c, list(peaks[["SRR14371955"]], peaks[["SRR14371956"]], peaks[["SRR14371957"]]))
+mdx_peaks <- do.call(c, list(peaks[["SRR15343189"]], peaks[["SRR15343190"]], peaks[["SRR15343191"]]))
+wt_peaks <- do.call(c, list(peaks[["SRR15343192"]], peaks[["SRR15343193"]], peaks[["SRR15343194"]], peaks[["SRR15343195"]]))
+```
+
+Run motif enrichment analysis
+```{r, eval=FALSE}
+motif_analysis_by_group(mdx_peaks, wt_peaks, "mdx_wt_results.rds", "mdx_results.rds", "wt_results.rds")
+motif_analysis_by_group(ui_peaks, i_peaks, "ui_i_results.rds", "ui_results.rds", "i_results.rds")
+```
+
+Visualize top 10 enriched motifs
+```{r, fig.width=12, fig.height=10, dpi=150}
+motif_visualization("motif_enrichment/motifs/mdx_wt_results.rds")
+motif_visualization("motif_enrichment/motifs/mdx_results.rds")
+motif_visualization("motif_enrichment/motifs/wt_results.rds")
+motif_visualization("motif_enrichment/motifs/ui_i_results.rds")
+motif_visualization("motif_enrichment/motifs/ui_results.rds")
+motif_visualization("motif_enrichment/motifs/i_results.rds")
+```
 
 # Discussion
 
