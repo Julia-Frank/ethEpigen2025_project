@@ -167,6 +167,7 @@ ah <- AnnotationHub()
 
 # 2. Search for relevant datasets
 # Note: GRCm38 is the same genome assembly as mm10 used for alignment
+# We use the Ensembl annotation, even though our reference genome is from UCSC, because we want to filter by biotype
 q <- AnnotationHub::query(ah, c("Mus musculus", "EnsDb", "GRCm38"))
 
 # 3. Retrieve metadata for all available versions
@@ -193,7 +194,7 @@ tss <- GenomicRanges::reduce(promoters(txs, upstream = 0, downstream = 1))
 
 # 9. Compute signal matrix around TSS
 tss_matrix <- epiwraps::signal2Matrix(tracks, granges(tss), w = 10, extend = 1000)
-title <- " Enrichment at transcription start site (TSS)"
+title <- " Enrichment at Transcription Start Site (TSS)"
 
 # 10. Plot heatmap of the enrichment signals
 hm <- epiwraps::plotEnrichedHeatmaps(tss_matrix, trim = 0.95, colors = c("white", "darkred"), 
@@ -408,7 +409,7 @@ par(mfrow = c(1, 1), oma = c(0, 0, 0, 0))
 
 ```
 
-As noted in the Pearson Correlation Heatmaps, the injured replicates cluster tightly together, while the uninjured replicates do not cluster as closely with each other and instead appear closer to the injured samples. In the MDX vs. WT comparison, not all WT replicates cluster more closely together than with MDX samples, but overall, most replicates tend to group closer to their own condition than to the other.
+As noted in the Pearson Correlation Heatmaps, the injured replicates cluster tightly together, while the uninjured replicates do not cluster as closely with each other and instead appear closer to the injured samples. In the MDX vs. WT comparison, replicates do not consistently cluster together by condition.
 
 ## Differential accessibility analysis
 
@@ -453,7 +454,7 @@ run_deseq2 <- function(count_mat, baseline_condition, contrast_condition, name =
   
   # 10. Adjust p-values and clip them
   res_df$padj <- p.adjust(res_df$pvalue, method = "BH")
-  res_df$padj <- ifelse(res_df$padj < 1e-14, 1e-14, res_df$padj)
+  res_df$padj <- ifelse(res_df$padj < 1e-10, 1e-10, res_df$padj)
   
   # 11. Mark significant genes
   res_df$significant <- ifelse(abs(res_df$logFC) > 1 & res_df$padj < 0.05, "Significant", "Not Significant")
@@ -467,11 +468,11 @@ res1 <- run_deseq2(counts1[, 6:ncol(counts1)], baseline_condition = "Uninjured",
 # Experiment 2 - WT vs. MDX: baseline = "WT"
 res2 <- run_deseq2(counts2[, 6:ncol(counts2)], baseline_condition = "WT", contrast_condition = "MDX", name = "WT vs. MDX")
 
+
 # Function to annotate the peaks (distance to nearest gene)
 annotate <- function(counts) {
   # Get all protein-coding genes as GRanges 
   genes_gr <- genes(ensdb, filter = TxBiotypeFilter("protein_coding"))
-  print(genes_gr)
   
   # Convert counts peaks to GRanges
   peak_gr <- GRanges(
@@ -479,10 +480,10 @@ annotate <- function(counts) {
     ranges = IRanges(start = counts$Start, end = counts$End),
     strand = "*"
   )
-  print(peak_gr)
+  
   # Use UCSC style for genes to match counts ("1" --> "chr1")
   seqlevelsStyle(genes_gr) <- "UCSC"
-  print(genes_gr)
+  
   # Identify common chromosomes
   common_chrs <- intersect(seqlevels(peak_gr), seqlevels(genes_gr))
   print(common_chrs)
@@ -552,13 +553,16 @@ res2_annot <- merge(res2_sig, counts2_sig[, c("peak", "nearest_gene", "gene_id",
 # Combine the annotated significant results
 combined_annot <- rbind(res1_annot, res2_annot)
 
-# Select top 10 by significance (lowest padj) per method
-top10_annotated <- combined_annot %>%
+# Select top 7 by significance (lowest padj) per method
+top7_annotated <- combined_annot %>%
   filter(!is.na(padj)) %>%
   arrange(padj) %>%
   group_by(method) %>%
-  slice_head(n = 10) %>%
+  slice_head(n = 7) %>%
   ungroup()
+
+# Combine the all results
+combined_res <- rbind(res1, res2)
 
 # Create volcano plot with annotation labels
 volcano_combined <- ggplot(combined_res, aes(x = logFC, y = -log10(padj))) +
@@ -576,19 +580,20 @@ volcano_combined <- ggplot(combined_res, aes(x = logFC, y = -log10(padj))) +
     strip.text = element_text(size = 12)
   ) +
   geom_text_repel(
-    data = top10_annotated,
+    data = top7_annotated,
     aes(label = annotation),
     color = "gray20",
-    size = 2.5,
+    size = 3,
     max.overlaps = Inf,          # show all selected labels
-    box.padding = 0.4,           # increase space around label slightly
-    point.padding = 0.5,         # a bit more room around point
-    force = 2,                 # stronger repulsion between labels
-    force_pull = 0.5,           # gentle pull back to point
+    box.padding = 0.5,           # more space around label
+    point.padding = 0.8,         # more space around the point
+    force = 2,                   # increase repulsion
+    force_pull = 0.3,            # gentle pull back to point
+    nudge_y = 0.2,
     segment.size = 0.3,
-    segment.color = "gray20",
-    min.segment.length = 0,
-    direction = "both",          # allow full adjustment
+    segment.color = "gray",
+    min.segment.length = 0.2,    # avoid short segments
+    direction = "both",          # free movement
     seed = 42
   )
 
