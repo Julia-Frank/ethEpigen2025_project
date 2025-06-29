@@ -1,0 +1,551 @@
+---
+title: "Project"
+author: "Julia Frank, Jesslyn Jesslyn, Sara Leka"
+date: "2025-06-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## **Load packages & data**
+
+At first, all necessary packages were installed and loaded.
+
+```{r}
+# R version  <-- check this
+# All packages are updated to the latest version. <-- check this
+suppressPackageStartupMessages({
+  library(GenomicRanges)
+  library(rtracklayer)
+  library(epiwraps)
+  library(AnnotationHub)
+  library(ensembldb)
+  library(ggplot2)
+  library(tidyverse)
+  library(DESeq2)
+  library(pheatmap)
+  library(RColorBrewer)
+})
+```
+
+Next, the gene annotation was obtained.
+
+```{r}
+# 1. Get Ensembl Transcript DB for Mouse
+ah <- AnnotationHub(localHub=TRUE) # remove localHub=TRUE from time to time
+# 2. Search for possible options
+q <- query(ah, c("Mus Musculus", "EnsDb", "GRCm38")) # GRCm38 is the same genome as mm10 we used for the alignment
+q
+# 3. Get more information on all difrerent versions
+meta <- mcols(q)[, c("rdatadateadded", "title", "genome", "tags", "rdatapath")]
+meta 
+# 4. Choose newest one
+ann <- ah[["AH83247"]]
+
+```
+
+Load all normalized genome-wide signal coverage tracks generated during our preprocessing and provided by the paper.
+
+The included data consist of:
+
+-   2 uninjured myofibers (UI1-2)
+
+-   3 injured myofibers (samples taken 7 days after injury) (I1-3)
+
+-   3 dystrophic (MDX) myofibers (mouse model for Duchenne muscular dystrophy) (MDX1-3)
+
+-   4 wild-type (WT) myofibers (WT1-4)
+
+Load the coverage tracks
+
+```{r}
+# Define folder structure and filenames
+input_folder <-"preprocessed_data_jesslyn"
+
+tracks1 <- list(
+  UI1=paste0(input_folder, "/SRR14371953.bw"),
+  UI2=paste0(input_folder, "/SRR14371954.bw"),
+  I1=paste0(input_folder, "/SRR14371955.bw"),
+  I2=paste0(input_folder, "/SRR14371956.bw"),
+  I3=paste0(input_folder, "/SRR14371957.bw")
+)
+tracks2 <- list(
+  MDX1=paste0(input_folder, "/SRR15343189.bw"),
+  MDX2=paste0(input_folder, "/SRR15343190.bw"),
+  MDX3=paste0(input_folder, "/SRR15343191.bw"),
+  WT1=paste0(input_folder, "/SRR15343192.bw"),
+  WT2=paste0(input_folder, "/SRR15343193.bw"),
+  WT3=paste0(input_folder, "/SRR15343194.bw"),
+  WT4=paste0(input_folder, "/SRR15343195.bw")
+)
+tracks_merged <- list(
+  UI=paste0(input_folder, "/uninjured_merged.bw"),
+  I=paste0(input_folder, "/injured_merged.bw"),
+  WT=paste0(input_folder, "/wt_merged.bw"),
+  MDX=paste0(input_folder, "/mdx_merged.bw")
+)
+
+# Define folder structure and filenames
+input_folder <-"preprocessed_data_sara"
+
+tracks1_S <- list(
+  UI1_S=paste0(input_folder, "/SRR14371953.bw"),
+  UI2_S=paste0(input_folder, "/SRR14371954.bw"),
+  I1_S=paste0(input_folder, "/SRR14371955.bw"),
+  I2_S=paste0(input_folder, "/SRR14371956.bw"),
+  I3_S=paste0(input_folder, "/SRR14371957.bw")
+)
+tracks2_S <- list(
+  MDX1_S=paste0(input_folder, "/SRR15343189.bw"),
+  MDX2_S=paste0(input_folder, "/SRR15343190.bw"),
+  MDX3_S=paste0(input_folder, "/SRR15343191.bw"),
+  WT1_S=paste0(input_folder, "/SRR15343192.bw"),
+  WT2_S=paste0(input_folder, "/SRR15343193.bw"),
+  WT3_S=paste0(input_folder, "/SRR15343194.bw"),
+  WT4_S=paste0(input_folder, "/SRR15343195.bw")
+)
+
+# Import the preprocessed data of the paper as a comparison
+input_folder <-"preprocessed_data_paper"
+
+tracks1_paper <- list(
+  UI1_paper=paste0(input_folder, "/GSM5273557_UI1_15_SOL893A45-1.bw"),
+  UI2_paper=paste0(input_folder, "/GSM5273558_UI2_23_SOL893A53-1.bw"),
+  I1_paper=paste0(input_folder, "/GSM5273559_I1_14_SOL893A44-1.bw"),
+  I2_paper=paste0(input_folder, "/GSM5273560_I2_16_SOL893A46-1.bw"),
+  I3_paper=paste0(input_folder, "/GSM5273561_I3_21_SOL893A51-1.bw")
+)
+tracks2_paper <- list(
+  MDX1_paper=paste0(input_folder, "/GSM5502605_MDX12_SOL893A14.bw"),
+  MDX2_paper=paste0(input_folder, "/GSM5502606_MDX24_SOL893A21.bw"),
+  MDX3_paper=paste0(input_folder, "/GSM5502607_MDX33_SOL893A28.bw"),
+  WT1_paper=paste0(input_folder, "/GSM5502608_WT1_SOL1313A1.bw"),
+  WT2_paper=paste0(input_folder, "/GSM5502609_WT2_SOL1313A3.bw"),
+  WT3_paper=paste0(input_folder, "/GSM5502610_WT3_SOL1313A5.bw"),
+  WT4_paper=paste0(input_folder, "/GSM5502611_WT4_SOL1313A8.bw")
+)
+```
+
+Import the count matrices
+
+```{r}
+# Define the sample names
+names1 <- c("UI1", "UI2", "I1", "I2", "I3")
+names2 <- c("MDX1", "MDX2", "MDX3", "WT1","WT2","WT3", "WT4")
+
+# Define where the data is stored
+input_folder <-"preprocessed_data_sara"
+
+# Read in the table, skipping the first comment lines
+counts1_S <- read.delim(paste0(input_folder, "/counts_UI_I.txt"), comment.char="#", stringsAsFactors=FALSE)
+head(counts1_S)
+counts2_S <- read.delim(paste0(input_folder, "/counts_MDX_WT.txt"), comment.char="#", stringsAsFactors=FALSE)
+head(counts2_S)
+
+# Rename the columns
+colnames(counts1_S)[7:ncol(counts1_S)] <- names1
+colnames(counts2_S)[7:ncol(counts2_S)] <- names2
+
+# Define where the data is stored
+input_folder <-"preprocessed_data_jesslyn"
+
+# Read in the table, skipping the first comment lines
+counts1 <- read.delim(paste0(input_folder, "/counts_UI_I.txt"), comment.char="#", stringsAsFactors=FALSE)
+head(counts1)
+counts2 <- read.delim(paste0(input_folder, "/counts_MDX_WT.txt"), comment.char="#", stringsAsFactors=FALSE)
+head(counts2)
+
+# Rename the columns
+colnames(counts1)[7:ncol(counts1)] <- names1
+colnames(counts2)[7:ncol(counts2)] <- names2
+
+```
+
+## Data Validation
+
+We plotted the enrichment of ATAC-seq signal around transcription start sites (TSSs) to assess data quality and validate that our assay accurately captured regions of open chromatin. Since TSSs are typically located in accessible, nucleosome-depleted regions of active genes, we expected to observe strong signal enrichment at these sites.
+
+```{r}
+plot_tss_heatmap <- function(tracks, ensdb = ann, upstream = 0, downstream = 1, bin_width = 10, extend = 1000, trim = 0.95, name = '') {
+  # 1. Load transcripts (protein coding only)
+  txs <- transcripts(ensdb, filter = TxBiotypeFilter("protein_coding"))
+  
+  # 2. Fix chromosome naming (add 'chr' prefix)
+  seqlevels(txs) <- ifelse(seqlevels(txs) %in% c(as.character(1:19), "X", "Y", "MT"),
+                           paste0("chr", seqlevels(txs)),
+                           seqlevels(txs))
+  
+  # 3. Keep only chromosomes shared between annotation and BigWig files
+  bw_seqinfo <- seqinfo(BigWigFile(tracks[[1]]))
+  common_seqlevels <- intersect(seqlevels(txs), seqlevels(bw_seqinfo))
+  txs <- keepSeqlevels(txs, common_seqlevels, pruning.mode = "coarse")
+  
+  # 4. Get TSS positions
+  tss <- GenomicRanges::reduce(promoters(txs, upstream = upstream, downstream = downstream))
+  
+  # 5. Compute signal matrix
+  tss_matrix <- epiwraps::signal2Matrix(tracks, granges(tss), w = bin_width, extend = extend)
+  title = paste0(name, 'Enrichment at transcription start site (TSS)')
+  # 6. Plot heatmap
+  hm <- epiwraps::plotEnrichedHeatmaps(tss_matrix, trim = trim, colors = c("white", "darkred"), 
+                                      multiScale = TRUE, axis_name = "TSS")
+  draw(hm, column_title = title)
+}
+```
+
+```{r}
+# Paper
+plot_tss_heatmap(tracks1_paper, name = 'Paper - ')
+plot_tss_heatmap(tracks2_paper, name = 'Paper - ')
+```
+
+```{r}
+# Jesslyn
+plot_tss_heatmap(tracks1, name = 'Jesslyn - ')
+plot_tss_heatmap(tracks2, name = 'Jesslyn - ')
+plot_tss_heatmap(tracks_merged, name = 'Jesslyn - ')
+```
+
+```{r}
+# Sara
+plot_tss_heatmap(tracks1_S, name = 'Sara - ')
+plot_tss_heatmap(tracks2_S, name = 'Sara - ')
+```
+
+```{r}
+plot_tss_heatmap(tracks_merged, name = 'Jesslyn - ')
+```
+
+## Comparison between Samples & to the paper
+
+### Using only the coverage tracks (convert into bins & then do the correlation analysis on them)
+
+```{r}
+# Parameters <- can change this
+bin_size <- 2000  # bin size in bp
+
+# 1. Define bins over the mouse genome (mm10)
+# 1.1. Import the sizes of the chromosomes (got from UCSC: https://hgdownload.soe.ucsc.edu/goldenPath/mm10/bigZips/)
+chrom_sizes <- read.table("genome/mm10.chrom.sizes.txt", col.names = c("seqnames", "seqlengths"), stringsAsFactors = FALSE)
+# Convert to named vector for tileGenome
+chrom_sizes_vec <- setNames(chrom_sizes$seqlengths, chrom_sizes$seqnames)
+
+# 1.2. Create GRanges bins
+bins <- tileGenome(seqlengths = chrom_sizes_vec, tilewidth = 1000, cut.last.tile.in.chrom = TRUE)
+
+# 2. Function to extract average coverage signal per bin from bigWig
+extract_signal_per_bin <- function(bw_file, bins) {
+  # Import coverage for bins from bigWig
+  # import.bw returns scores per region, use "mean" score
+  # rtracklayer::import can subset by bins, but we want summarized mean per bin
+  
+  # import coverage as Rle per chromosome
+  # Then calculate mean coverage per bin
+  
+  # Approach: use rtracklayer::import.bw with which=bins and summarize by mean
+  
+  cov <- import.bw(bw_file, which=bins, as="RleList")
+  
+  # Function to get mean coverage per bin in one chromosome
+  mean_cov_per_bin <- function(chr_cov, chr_bins) {
+    view <- Views(chr_cov, start=start(chr_bins), end=end(chr_bins))
+    viewMeans(view)
+  }
+  
+  # For each chromosome, calculate mean coverage per bin
+  result <- numeric(length(bins))
+  names(result) <- paste0(seqnames(bins), ":", start(bins), "-", end(bins))
+  
+  chr_names <- seqlevels(bins)
+  bin_idx <- 1
+  for (chr in names(cov)) {
+    # get bins on this chromosome
+    chr_bin_idx <- which(as.character(seqnames(bins)) == chr)
+    if(length(chr_bin_idx) > 0) {
+      chr_bins <- bins[chr_bin_idx]
+      chr_cov <- cov[[chr]]
+      means <- mean_cov_per_bin(chr_cov, chr_bins)
+      result[chr_bin_idx] <- means
+    }
+  }
+  return(result)
+}
+# 3. Extract signals for all samples
+extract_all_samples <- function(tracks, bins) {
+  signal_list <- lapply(tracks, extract_signal_per_bin, bins=bins)
+  signal_mat <- do.call(cbind, signal_list)
+  colnames(signal_mat) <- names(tracks)
+  rownames(signal_mat) <- names(signal_list[[1]])
+  return(signal_mat)
+}
+
+# 4. Function to get Correlation analysis for a signal matrix
+analyze_coverage_matrix <- function(signal_mat, pseudocount = 1e-3, log_t = TRUE, do_zscore = FALSE, plot_prefix = "") {
+  
+  # 1. Replace NAs with 0
+  signal_mat[is.na(signal_mat)] <- 0
+  
+  # 2. Log2 transform
+  # Pseudocount is added to avoid infinite values after log-transform
+  if (log_t){
+    log_signal <- log2(signal_mat + pseudocount)
+  } else {
+    log_signal <- signal_mat
+  }
+  
+  
+  
+  # 3. Z-score normalization per bin (optional)
+  if (do_zscore) {
+    # Filter out zero variance rows (they cause a zero division during the scaling)
+    # Check zero variance rows
+    row_vars <- apply(log_signal, 1, var)
+    zero_var_rows <- which(row_vars == 0)
+    cat("Number of zero-variance bins (rows):", length(zero_var_rows), "\n")
+    log_signal_filtered <- log_signal[-zero_var_rows, ]
+    norm_signal <- t(scale(t(log_signal_filtered)))
+  } else {
+    norm_signal <- log_signal
+  }
+  
+  # 4. Correlation matrix and heatmap
+  # Calculate Pearson Correlation
+  cor_mat <- cor(norm_signal, method = "pearson")
+  sample_order <- colnames(signal_mat)
+  cor_mat_ordered <- cor_mat[sample_order, sample_order]
+  pheatmap(cor_mat_ordered, cluster_rows = FALSE, cluster_cols = FALSE, 
+           main = paste0(plot_prefix, " Pearson Correlation between Replicates"), 
+           col = colorRampPalette(brewer.pal(9, "Blues"))(100))
+  
+  # 5. PCA
+  pca <- prcomp(t(norm_signal), scale. = FALSE)
+  pca_df <- data.frame(
+    PC1 = pca$x[,1],
+    PC2 = pca$x[,2],
+    Sample = colnames(norm_signal)
+  )
+  p <- ggplot(pca_df, aes(PC1, PC2, label = Sample)) +
+    geom_point(size = 3) +
+    geom_text(vjust = -1) +
+    theme_minimal() +
+    ggtitle(paste0(plot_prefix, " PCA of binned coverage signals"))
+  print(p)
+  
+  # 6. Hierarchical clustering
+  dist_mat <- dist(t(norm_signal))
+  hc <- hclust(dist_mat)
+  plot(hc, main = paste0(plot_prefix, " Hierarchical Clustering of Samples"), xlab = "", sub = "")
+  
+  # Return list with key results if you want to use downstream
+  return(list(
+    log_signal = log_signal,
+    norm_signal = norm_signal,
+    cor_mat = cor_mat,
+    pca = pca,
+    hc = hc
+  ))
+}
+```
+
+Results for the paper:
+
+```{r}
+# Extract the signal matrix
+signal_mat1_paper <- extract_all_samples(tracks1_paper, bins)
+signal_mat2_paper <- extract_all_samples(tracks2_paper, bins)
+signal_mat_all_paper <- cbind(signal_mat1_paper, signal_mat2_paper)
+
+# Run the analysis function
+results_paper <- analyze_coverage_matrix(signal_mat_all_paper, pseudocount = 1e-3, do_zscore = FALSE, plot_prefix = "Paper -")
+```
+
+Jesslyn:
+
+```{r}
+# Extract the signal matrix
+signal_mat1_jesslyn <- extract_all_samples(tracks1, bins)
+signal_mat2_jesslyn <- extract_all_samples(tracks2, bins)
+signal_mat_all_jesslyn <- cbind(signal_mat1_jesslyn, signal_mat2_jesslyn)
+
+# Run the analysis function
+results_jesslyn <- analyze_coverage_matrix(signal_mat_all_jesslyn, pseudocount = 1e-3, do_zscore = FALSE, plot_prefix = "Jesslyn -")
+
+```
+
+Sara:
+
+```{r}
+# Extract the signal matrix
+signal_mat1_sara <- extract_all_samples(tracks1_S, bins)
+signal_mat2_sara <- extract_all_samples(tracks2_S, bins)
+signal_mat_all_sara <- cbind(signal_mat1_sara, signal_mat2_sara)
+
+# Run the analysis function
+results_sara <- analyze_coverage_matrix(signal_mat_all_sara, pseudocount = 1e-3, do_zscore = FALSE, plot_prefix = "Sara -", index = "S")#
+```
+
+### using the peak data (better)
+
+```{r}
+analyze_coverage_matrix <- function(signal_mat, pseudocount = 1e-3, log_t = TRUE, do_zscore = FALSE, plot_prefix = "") {
+  
+  # 1. Replace NAs with 0
+  signal_mat[is.na(signal_mat)] <- 0
+  
+  # 2. Log2 transform
+  if (log_t) {
+    log_signal <- log2(signal_mat + pseudocount)
+  } else {
+    log_signal <- signal_mat
+  }
+
+  # 3. Z-score normalization per bin (optional)
+  if (do_zscore) {
+    row_vars <- apply(log_signal, 1, var)
+    zero_var_rows <- which(row_vars == 0)
+    cat("Number of zero-variance bins (rows):", length(zero_var_rows), "\n")
+    log_signal_filtered <- log_signal[-zero_var_rows, ]
+    norm_signal <- t(scale(t(log_signal_filtered)))
+  } else {
+    norm_signal <- log_signal
+  }
+
+  # 4. Extract conditions from column names
+  sample_names <- colnames(norm_signal)
+  sample_conditions <- gsub("[0-9]+$", "", sample_names)
+  annotation_df <- data.frame(Condition = sample_conditions)
+  rownames(annotation_df) <- sample_names
+
+  # 5. Correlation matrix
+  cor_mat <- cor(norm_signal, method = "pearson")
+  cor_mat_ordered <- cor_mat[sample_names, sample_names]
+
+  # 6. Heatmap with condition color annotations
+  pheatmap(cor_mat_ordered,
+           cluster_rows = FALSE, cluster_cols = FALSE,
+           main = paste0(plot_prefix, " Pearson Correlation between Replicates"),
+           col = colorRampPalette(RColorBrewer::brewer.pal(9, "Blues"))(100),
+           annotation_col = annotation_df)
+
+   # 7. Do PCA
+  pca <- prcomp(t(norm_signal), scale. = FALSE)
+  pca_df <- data.frame(
+    PC1 = pca$x[,1],
+    PC2 = pca$x[,2],
+    Sample = sample_names,
+    Condition = sample_conditions
+  )
+
+  # 8. Calculate explained variance for axis labels
+  var_explained <- round((pca$sdev^2 / sum(pca$sdev^2))[1:2] * 100, 1)
+  
+  # 9. Plot PCA
+  p <- ggplot(pca_df, aes(PC1, PC2, color = Condition, label = Sample)) +
+      geom_point(size = 3) +
+      geom_text(vjust = -1, hjust = 0.5, size = 3) +
+      theme_minimal() +
+      xlab(paste0("PC1 (", var_explained[1], "% variance)")) +
+      ylab(paste0("PC2 (", var_explained[2], "% variance)")) +
+      ggtitle(paste0(plot_prefix, " PCA of Samples")) +
+      coord_cartesian(clip = "off") +
+      theme(plot.margin = margin(10, 20, 10, 10)) # extra right margin for labels
+  print(p)
+
+  # 7. Hierarchical clustering
+  dist_mat <- dist(t(norm_signal))
+  hc <- hclust(dist_mat)
+  plot(hc, main = paste0(plot_prefix, " Hierarchical Clustering of Samples"), xlab = "", sub = "")
+
+  return(list(
+    log_signal = log_signal,
+    norm_signal = norm_signal,
+    cor_mat = cor_mat,
+    pca = pca,
+    hc = hc
+  ))
+}
+
+```
+
+```{r}
+# Function to preprocess the count matrix
+# The matrix that is converted into a numeric matrix with samples as columns and features (peaks) as rows, and no metadata columns
+process_mat <- function(mat) {
+  # Set rownames to peak ID
+  rownames(mat) <- mat$Geneid
+  
+  # Extract just the count columns (assuming they start from column 6)
+  mat <- mat[, 7:ncol(mat)]
+  
+  # Ensure it's a numeric matrix
+  mat <- as.matrix(mat)
+  mode(mat) <- "numeric"
+  return(mat)
+}
+```
+
+```{r}
+process_mat <- function(mat) {
+  # Set rownames to peak ID
+  rownames(mat) <- mat$Geneid
+  
+  # Extract just the count columns (assuming they start from column 7)
+  count_data <- mat[, 7:ncol(mat)]
+  
+  # Ensure numeric
+  count_data <- as.matrix(count_data)
+  mode(count_data) <- "numeric"
+  
+  # Extract condition names by removing trailing digits
+  sample_conditions <- gsub("[0-9]+$", "", colnames(count_data))
+  
+  # Create a sample table
+  sample_info <- data.frame(
+    row.names = colnames(count_data),
+    condition = sample_conditions 
+  )
+  
+  # Create DESeq2 dataset
+  dds <- DESeqDataSetFromMatrix(countData = count_data,
+                                colData = sample_info,
+                                design = ~1)  # No design, just transformation
+  
+  # Apply rlog transformation
+  rlog_counts <- rlog(dds, blind = TRUE)
+  
+  # Extract the normalized matrix
+  norm_mat <- assay(rlog_counts)
+  
+  return(norm_mat)
+}
+
+```
+
+```{r}
+# Analyse the UI vs. I experiment with saras preprocessing
+count_mat1_sara <- process_mat(counts1_S)
+head(count_mat1_sara)
+results_sara1 <- analyze_coverage_matrix(count_mat1_sara, pseudocount = 1e-3, log_t = FALSE, do_zscore = FALSE, plot_prefix = "Sara 1 -")
+
+# Analyse the MDX vs. WT experiment with saras preprocessing
+count_mat2_sara <- process_mat(counts2_S)
+head(count_mat2_sara)
+results_sara1 <- analyze_coverage_matrix(count_mat2_sara, pseudocount = 1e-3, log_t = FALSE, do_zscore = FALSE, plot_prefix = "Sara 2 -")
+
+```
+
+```{r}
+# Analyse the UI vs. I experiment with saras preprocessing
+count_mat1_jesslyn <- process_mat(counts1)
+head(count_mat1_jesslyn)
+results_jesslyn1 <- analyze_coverage_matrix(count_mat1_jesslyn, pseudocount = 1e-3, log_t = FALSE, do_zscore = FALSE, plot_prefix = "Jesslyn 1 -")
+
+# Analyse the MDX vs. WT experiment with saras preprocessing
+count_mat2_jesslyn <- process_mat(counts2)
+head(count_mat2_jesslyn)
+results_jesslyn2 <- analyze_coverage_matrix(count_mat2_jesslyn, pseudocount = 1e-3, log_t = FALSE, do_zscore = FALSE, plot_prefix = "Jesslyn 2 -")
+```
+
+## **Differential accessibility analysis**

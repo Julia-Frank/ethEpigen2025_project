@@ -51,26 +51,31 @@ suppressPackageStartupMessages({
   library(TFBSTools)
   library(AnnotationHub)
   library(Biostrings)
+  library(ggrepel)
 })
 ```
 
-## The data
+## The Data
 
-The pipeline processes single myofiber ATAC-seq data obtained from the EDL muscle of Mus musculus. The raw data is available through the [SRA Run Selector](https://www.ncbi.nlm.nih.gov/Traces/study/?acc=PRJNA726576&o=acc_s%3Aa) while the authors provide just their processed coverage tracks on [GEO](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE173676)\
-The dataset is divided into two distinct and independent experiments, each representing a separate biological context and likely processed at different times. \
+The pipeline processes single myofiber ATAC-seq data obtained from the Extensor Digitorum Longus (EDL) muscle of *Mus musculus*. The raw data is available through the [SRA Run Selector](https://www.ncbi.nlm.nih.gov/Traces/study/?acc=PRJNA726576&o=acc_s%3Aa) and the authors also provide their processed coverage tracks on [GEO](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE173676).
 
-Experiment 1 - muscle regeneration:\
+The dataset consists of two distinct and independently conducted experiments, each addressing a separate biological question. The first experiment investigates muscle regeneration by comparing uninjured and injured myofibers. The second focuses on muscular dystrophy by comparing wild-type (WT) and MDX mice, a model for Duchenne Muscular Dystrophy (DMD). These two experiments were performed on different days and used different mouse strains, both of which can introduce batch effects.
 
-- **UI1–2**: 2 uninjured control myofibers.
-- **I1–3**: 3 injured myofibers (harvested 7 days after acute injury, representing the regenerating state).\
+Because these batch effects are strongly confounded with the biological conditions (i.e., all WT and MDX samples belong to one batch, and all injured and uninjured samples to another), a joint analysis across all four conditions would not allow us to confidently separate technical variation from true biological differences. To avoid this confounding and ensure meaningful interpretation, we analyzed the two experiments separately.
 
-Experiment 2 – muscular dystrophy:\
+**Experiment 1 – Muscle Regeneration (2021-05-01)**\
+*Mouse strain: C57BL/6*
 
-- **MDX1–3**: 3 myofibers from MDX mice, a standard mouse model for Duchenne muscular dystrophy (DMD), characterized by chronic muscle degeneration.
-- **WT1–4**: 4 myofibers from wild-type (WT) healthy control mice.
+-   Uninjured_1–2: 2 uninjured control myofibers
 
-A joint analysis across all four conditions would have been informative, but the experimental design introduces batch effects that make it difficult to distinguish technical variation from true biological differences. In fact, there is not a common condition across the two experiments. While a possible solution to overcome this would have been combining the UI data from the first batch with the WT data from the second one, assuming they are the same would have been risky given that the authors of the data do not clearly state this equivalence. \
-To mantain clarity and avoid confounding due to batch effects, the two experimental setups are therefore analyzed independently: one comparing uninjured and injured myofibers, and the other comparing WT and MDX myofibers.
+-   Injured_1–3: 3 injured myofibers (collected 7 days after acute injury, representing the regenerating state)
+
+**Experiment 2 – Muscular Dystrophy (2021-08-07)**\
+*Mouse strain: C57/B10ScSn-Dmdmdx & C57/B10ScSn*
+
+-   MDX_1–3: 3 myofibers from MDX mice (a DMD model with chronic muscle degeneration)
+
+-   WT_1–4: 4 myofibers from wild-type healthy control mice
 
 ## Preprocessing
 
@@ -90,7 +95,7 @@ knitr::include_graphics(c("images/fastqc_adapter_content_plot.png", "images/fast
 
 NB: plot refers to Sara's alignment (I didn't have the stats from Jesslyn)
 
-Trimmed reads were aligned to the mm10 mouse genome using `bowtie2`, followed by filtering, sorting, and indexing with `samtools`. Only uniquely mapping reads were retained. The `.bam` files were then filtered for high-quality, uniquely mapped reads (MAPQ ≥ 20), and PCR duplicates were removed using `Picard`. Read groups were added to comply with downstream processing tools. Final sorting and indexing was performed with `samtools`. 
+Trimmed reads were aligned to the mm10 mouse genome using `bowtie2`, followed by filtering, sorting, and indexing with `samtools`. Only uniquely mapping reads were retained. The `.bam` files were then filtered for high-quality, uniquely mapped reads (MAPQ ≥ 20), and PCR duplicates were removed using `Picard`. Read groups were added to comply with downstream processing tools. Final sorting and indexing was performed with `samtools`.
 
 knitr::include_graphics("images/bam_summaryplot.png")
 
@@ -104,7 +109,7 @@ To compare chromatin accessibility between conditions, we first combined the pea
 
 ### 5. Coverage Track Generation
 
-For visualization and downstream analyses, normalized bigWig coverage tracks were generated using `bamCoverage` from the `deepTools` suite. 
+For visualization and downstream analyses, normalized bigWig coverage tracks were generated using `bamCoverage` from the `deepTools` suite.
 
 ### 6. Load the Preprocessed Data
 
@@ -162,7 +167,7 @@ ah <- AnnotationHub()
 
 # 2. Search for relevant datasets
 # Note: GRCm38 is the same genome assembly as mm10 used for alignment
-q <- query(ah, c("Mus musculus", "EnsDb", "GRCm38"))
+q <- AnnotationHub::query(ah, c("Mus musculus", "EnsDb", "GRCm38"))
 
 # 3. Retrieve metadata for all available versions
 meta <- mcols(q)[, c("rdatadateadded", "title", "genome", "tags", "rdatapath")]
@@ -408,109 +413,8 @@ As noted in the Pearson Correlation Heatmaps, the injured replicates cluster tig
 ## Differential accessibility analysis
 
 ```{r}
-# Function to get the same results for all DE
-process_and_plot_results <- function(res_df, res = NULL, method_name = "Method", 
-                                     normalized_counts = NULL) {
-  
-  # Remove rows with missing values in results (e.g., NA p-values)
-  res_df <- na.omit(res_df)
-  
-  # Adjust p-values and clip them
-  res_df$padj <- p.adjust(res_df$pvalue, method = "bonferroni")
-  # Clip p-values
-  res_df$padj <- ifelse(res_df$padj < 1e-50, 1e-50, res_df$padj) 
-  
-  # Mark significant genes based on thresholds
-  res_df$significant <- ifelse(abs(res_df$logFC) > 1 & 
-                              res_df$padj < 0.05, "Significant", "Not Significant")
-  
-  
-  # Visualize results
-  # 1. MA Plot
-  if (!is.null(res) & method_name != "limma"){
-    plotMA(res, main = paste("MA Plot (", method_name, ")", sep = ""))
-  } else if ((!is.null(res)) & (method_name == "limma")){
-    limma::plotMA(res, main = paste("MA Plot (", method_name, ")", sep = ""))
-  }
-  
-  # Create Volcano Plot
-  volcano <- ggplot(res_df, aes(x = logFC, y = -log10(padj))) +
-    geom_point(aes(color = significant), alpha = 0.7, size = 1) +
-    scale_color_manual(values = c("gray", "maroon")) +
-    theme_minimal() +
-    labs(
-      title = paste("Volcano Plot (", method_name, ")", sep = ""),
-      x = "Log2 Fold Change",
-      y = "-Log10 (Bonferroni corrected p-value)"
-    )
-  print(volcano)
-  
-  # Select top genes
-  top_genes <- rownames(res_df[order(res_df$padj), ])[abs(res_df$logFC) > 2]
-  top_genes <- top_genes[1:min(50, length(top_genes))]
-  
-  # Heatmap of top differentially expressed genes
-  if (!is.null(normalized_counts)) {  # Check for normalized counts
-    pheatmap(normalized_counts[top_genes, ], cluster_rows = TRUE, 
-             cluster_cols = TRUE, 
-             main = paste("Heatmap of Top Genes (", method_name, ")", sep = ""))
-  }
-  
-  # Extract significant DEGs
-  significant_genes <- rownames(res_df[res_df$significant == "Significant", ])
-  return(significant_genes)
-}
-```
-
-```{r}
-run_limma_voom <- function(count_mat, baseline_condition) {
-  # 1. Extract numeric count matrix
-  count_data <- as.matrix(count_mat)
-  mode(count_data) <- "numeric"
-  
-  # 2. Extract condition from column names (e.g., "WT_1", "WT_2")
-  condition <- substr(colnames(count_data), 1, nchar(colnames(count_data)) - 2)
-  condition <- factor(condition)
-  condition <- relevel(condition, ref = baseline_condition)
-  
-  # 3. Create DGEList object
-  dge <- DGEList(counts = count_data, group = condition)
-  
-  # 4. Filter out lowly expressed peaks
-  keep <- filterByExpr(dge)
-  dge <- dge[keep, , keep.lib.sizes = FALSE]
-  
-  # 5. Normalize using TMM
-  dge <- calcNormFactors(dge)
-  
-  # 6. Create design matrix
-  design <- model.matrix(~ condition)
-  print("Design matrix head:")
-  print(head(design))
-  
-  # 7. Voom transformation
-  v <- voom(dge, design = design, plot = TRUE)
-  
-  # 8. Fit linear model
-  fit <- lmFit(v, design)
-  fit <- eBayes(fit)
-  
-  # 9. Extract results (condition effect = coef 2)
-  results <- topTable(fit, coef = 2, number = Inf, sort.by = "P")
-  results_df <- as.data.frame(results)
-  results_df$gene <- rownames(results_df)
-  results_df$pvalue <- results$P.Value
-  
-  # 10. Optionally process and visualize results
-  limma_DEGs <- process_and_plot_results(results_df, res = fit, method_name = "limma", normalized_counts = v$E)
-  
-  # 11. Return results
-  return(list(results = results_df, DEGs = limma_DEGs))
-}
-```
-
-```{r}
-run_deseq2 <- function(count_mat, baseline_condition, contrast_condition) {
+# Function to run the differential accessibility analysis
+run_deseq2 <- function(count_mat, baseline_condition, contrast_condition, name = "") {
   # 1. Convert to numeric matrix
   count_data <- as.matrix(count_mat)
   mode(count_data) <- "numeric"
@@ -539,41 +443,162 @@ run_deseq2 <- function(count_mat, baseline_condition, contrast_condition) {
   # 8. Extract results for contrast
   res <- results(dds, contrast = c("condition", contrast_condition, baseline_condition))
   res_df <- as.data.frame(res)
-  res_df$gene <- rownames(res_df)
-  res_df$logFC <- res$log2FoldChange  # Rename for consistency
+  res_df$peak <- rownames(res_df)
+  res_df$logFC <- res$log2FoldChange
   res_df$pvalue <- res$pvalue
-  normalized_counts <- assay(vst(dds, blind = FALSE))  # Variance stabilizing transformation
+  res_df$method <- name
   
-  # 9. Extract significant DEGs from DESeq2
-  DESeq2_DEGs <- process_and_plot_results(res_df, res, method_name = "DESeq2", normalized_counts)
+  # 9. Remove rows with missing values
+  res_df <- na.omit(res_df)
   
-  # 10. Return results
-  return(list(results = res_df, DEGs = DESeq2_DEGs))
+  # 10. Adjust p-values and clip them
+  res_df$padj <- p.adjust(res_df$pvalue, method = "BH")
+  res_df$padj <- ifelse(res_df$padj < 1e-14, 1e-14, res_df$padj)
+  
+  # 11. Mark significant genes
+  res_df$significant <- ifelse(abs(res_df$logFC) > 1 & res_df$padj < 0.05, "Significant", "Not Significant")
+  
+  return(res_df)
 }
 
-```
+# Experiment 1 - Uninjured vs. Injured: baseline = "Uninjured"
+res1 <- run_deseq2(counts1[, 6:ncol(counts1)], baseline_condition = "Uninjured", contrast_condition = "Injured", name = "Uninjured vs. Injured")
 
-### Uninjured vs. Injured Experiment
+# Experiment 2 - WT vs. MDX: baseline = "WT"
+res2 <- run_deseq2(counts2[, 6:ncol(counts2)], baseline_condition = "WT", contrast_condition = "MDX", name = "WT vs. MDX")
 
-```{r}
-# Now apply the function to your two datasets:
+# Function to annotate the peaks (distance to nearest gene)
+annotate <- function(counts) {
+  # Get all protein-coding genes as GRanges 
+  genes_gr <- genes(ensdb, filter = TxBiotypeFilter("protein_coding"))
+  print(genes_gr)
+  
+  # Convert counts peaks to GRanges
+  peak_gr <- GRanges(
+    seqnames = counts$Chr,
+    ranges = IRanges(start = counts$Start, end = counts$End),
+    strand = "*"
+  )
+  print(peak_gr)
+  # Use UCSC style for genes to match counts ("1" --> "chr1")
+  seqlevelsStyle(genes_gr) <- "UCSC"
+  print(genes_gr)
+  # Identify common chromosomes
+  common_chrs <- intersect(seqlevels(peak_gr), seqlevels(genes_gr))
+  print(common_chrs)
+  # Keep only shared chromosomes and store their original indices
+  keep_idx <- which(seqnames(peak_gr) %in% common_chrs)
+  peak_gr_filtered <- peak_gr[keep_idx]
+  genes_gr <- keepSeqlevels(genes_gr, common_chrs, pruning.mode = "coarse")
+  
+  # Find nearest gene indices for filtered peaks
+  nearest_genes_idx <- nearest(peak_gr_filtered, genes_gr)
+  nearest_genes <- genes_gr[nearest_genes_idx]
+  distances <- distance(peak_gr_filtered, nearest_genes)
+  
+  gene_names <- mcols(nearest_genes)$gene_name
+  gene_ids <- names(nearest_genes)
+  
+  # Initialize annotation vectors with NA for all original peaks
+  nearest_gene_vec <- rep(NA_character_, length(peak_gr))
+  gene_id_vec <- rep(NA_character_, length(peak_gr))
+  distance_vec <- rep(NA_integer_, length(peak_gr))
+  annotation_vec <- rep(NA_character_, length(peak_gr))
+  
+  # Fill in values only for kept peaks
+  nearest_gene_vec[keep_idx] <- gene_names
+  gene_id_vec[keep_idx] <- gene_ids
+  distance_vec[keep_idx] <- distances
+  
+  # Create annotation string: gene name + signed distance in bp
+  annotation_vec[keep_idx] <- ifelse(
+    distances >= 0,
+    paste0(gene_names, "+", distances, " bp"),
+    paste0(gene_names, distances, " bp")  # distances already negative
+  )
+  
+  # Add annotation columns back to counts data frame
+  annotated_counts <- counts
+  annotated_counts$nearest_gene <- nearest_gene_vec
+  annotated_counts$gene_id <- gene_id_vec
+  annotated_counts$distance_to_gene <- distance_vec
+  annotated_counts$annotation <- annotation_vec
+  annotated_counts$peak <- rownames(counts)
+  
+  return(annotated_counts)
+}
+# Get significant peak IDs
+significant_peaks1 <- rownames(res1[res1$significant == "Significant", ])
+significant_peaks2 <- rownames(res2[res2$significant == "Significant", ])
 
-# Dataset 1: baseline = "Uninjured"
-res1_limma <- run_limma_voom(counts1[, 6:ncol(counts1)], baseline_condition = "Uninjured")
-res1_des <- run_deseq2(counts1[, 6:ncol(counts1)], baseline_condition = "Uninjured", contrast_condition = "Injured")
+# Subset count matrix based on significant peaks (has information on the peaks)
+counts1_sig <- counts1[rownames(counts1) %in% significant_peaks1, ]
+counts2_sig <- counts2[rownames(counts2) %in% significant_peaks2, ]
 
+# Annotate the count matrix
+counts1_sig <- annotate(counts1_sig)
+print(head(counts1_sig))
+counts2_sig <- annotate(counts2_sig)
+print(head(counts1_sig))
 
-```
+# Subset results based on significant peaks
+res1_sig <- res1[rownames(res1) %in% significant_peaks1, ]
+res2_sig <- res2[rownames(res2) %in% significant_peaks2, ]
 
-```{r}
-# Dataset 2: baseline = "WT"
-res2 <- run_limma_voom(counts2[, 6:ncol(counts2)], baseline_condition = "WT")
-res2_des <- run_deseq2(counts2[, 6:ncol(counts2)], baseline_condition = "WT", contrast_condition = "MDX")
+# Merge the annotations to the reults
+res1_annot <- merge(res1_sig, counts1_sig[, c("peak", "nearest_gene", "gene_id", "distance_to_gene","annotation")], by = "peak", all.x = TRUE)
+res2_annot <- merge(res2_sig, counts2_sig[, c("peak", "nearest_gene", "gene_id", "distance_to_gene","annotation")], by = "peak", all.x = TRUE)
+
+# Combine the annotated significant results
+combined_annot <- rbind(res1_annot, res2_annot)
+
+# Select top 10 by significance (lowest padj) per method
+top10_annotated <- combined_annot %>%
+  filter(!is.na(padj)) %>%
+  arrange(padj) %>%
+  group_by(method) %>%
+  slice_head(n = 10) %>%
+  ungroup()
+
+# Create volcano plot with annotation labels
+volcano_combined <- ggplot(combined_res, aes(x = logFC, y = -log10(padj))) +
+  geom_point(aes(color = significant), alpha = 0.7, size = 1) +
+  scale_color_manual(values = c("gray", "maroon")) +
+  facet_wrap(~ method, ncol = 2) +
+  theme_minimal() +
+  labs(
+    title = "Volcano Plots",
+    x = "Log2 Fold Change",
+    y = "-Log10 (FDR corrected p-value)"
+  ) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    strip.text = element_text(size = 12)
+  ) +
+  geom_text_repel(
+    data = top10_annotated,
+    aes(label = annotation),
+    color = "gray20",
+    size = 2.5,
+    max.overlaps = Inf,          # show all selected labels
+    box.padding = 0.4,           # increase space around label slightly
+    point.padding = 0.5,         # a bit more room around point
+    force = 2,                 # stronger repulsion between labels
+    force_pull = 0.5,           # gentle pull back to point
+    segment.size = 0.3,
+    segment.color = "gray20",
+    min.segment.length = 0,
+    direction = "both",          # allow full adjustment
+    seed = 42
+  )
+
+print(volcano_combined)
 ```
 
 ## Gene set enrichment analysis
 
 ## Motif enrichment analysis
+
 ```{r define required functions}
 ## Function to clean granges
 clean_seqlevels <- function(granges){
@@ -665,6 +690,7 @@ twobit <- ah[["AH88475"]]
 ```
 
 Motif preparation
+
 ```{r motif preparation}
 ## Pull only mouse HOCOMOCOv10, convert
 motifs <- MotifDb::query(MotifDb, c("Mmusculus", "HOCOMOCOv10"))
@@ -685,6 +711,7 @@ motifs <- do.call(PWMatrixList, motifs)
 ```
 
 Define promoter regions (±5 kb around the TSS)
+
 ```{r}
 txs <- keepSeqlevels(txs, common_seqlevels, pruning.mode = "coarse")
 proms <- promoters(txs, upstream = 5000, downstream = 5000)
@@ -692,6 +719,7 @@ proms <- keepStandardChromosomes(proms, pruning.mode = "coarse")
 ```
 
 Prepare peaks
+
 ```{r}
 # Import peaks
 ## List the files:
@@ -709,12 +737,14 @@ wt_peaks <- do.call(c, list(peaks[["SRR15343192"]], peaks[["SRR15343193"]], peak
 ```
 
 Run motif enrichment analysis
+
 ```{r, eval=FALSE}
 motif_analysis_by_group(mdx_peaks, wt_peaks, "mdx_wt_results.rds", "mdx_results.rds", "wt_results.rds")
 motif_analysis_by_group(ui_peaks, i_peaks, "ui_i_results.rds", "ui_results.rds", "i_results.rds")
 ```
 
 Visualize top 10 enriched motifs
+
 ```{r, fig.width=12, fig.height=10, dpi=150}
 motif_visualization("motif_enrichment/motifs/mdx_wt_results.rds")
 motif_visualization("motif_enrichment/motifs/mdx_results.rds")
