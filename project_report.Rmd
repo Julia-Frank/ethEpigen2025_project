@@ -809,6 +809,8 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 | Background model                                 | Default: Built from input sequences, using a 0th‑order Markov model of primary sequence nucleotide frequencies, with shuffling of input sequence | Default: Background regions calculated based on the GC/CpG% at regions near the TSS of genes (±5 kb) and split into size of the analyzed regions.              | Differences in background composition, such as GC% content, can greatly affect the enrichment p-values, leading to different top motifs.                                  |
 +--------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 
+: Comparison of MEME (AME) and HOMER (findMotifsGenome.pl) features and the potential impact.
+
 Limitations:
 
 1.  We used a naive overlap approach to obtain the set of peaks for each condition, giving us the strongest and most reproducible peak regions. However, due to this, true but variable binding sites that are not captured in all replicates may be lost. To obtain a more confident and reproducible set of peaks, Irreproducible Discovery Rate (IDR) could be used for future work.
