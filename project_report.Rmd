@@ -47,9 +47,7 @@ suppressPackageStartupMessages({
   library(MotifDb)
   library(universalmotif)
   library(data.table)
-  library(GenomicRanges)
   library(TFBSTools)
-  library(AnnotationHub)
   library(Biostrings)
   library(ggrepel)
 })
@@ -604,160 +602,210 @@ print(volcano_combined)
 
 ## Motif enrichment analysis
 
-```{r define required functions}
-## Function to clean granges
-clean_seqlevels <- function(granges){
-  granges <- keepSeqlevels(granges, common_seqlevels, pruning.mode = "coarse")
-  return(granges)
-}
+We performed motif enrichment analysis to identify top motifs that are enriched in peaks around the promoter regions. This was performed with the following steps:
 
-## Function to obtain common and unique peaks between two GRanges objects
-obtain_peaks <- function(cond1, cond2){
-  # Find overlaps
-  hits <- findOverlaps(cond1, cond2)
-  
-  # Common peaks: intersect overlapping regions
-  common_cond1 <- cond1[(queryHits(hits))]
-  common_cond2  <- cond2[(subjectHits(hits))]
-  common_peaks <- pintersect(common_cond1, common_cond2) #since exact peak region used
-  common_peaks <- clean_seqlevels(common_peaks)
-  
-  # Unique peaks for cond1 (non-overlapping)
-  cond1_peaks <- cond1[-unique(queryHits(hits))]
-  cond1_peaks <- clean_seqlevels(cond1_peaks)
-  
-  # Unique peaks for cond2 (non-overlapping)
-  cond2_peaks <- cond2[-unique(subjectHits(hits))]
-  cond2_peaks <- clean_seqlevels(cond2_peaks)
-  
-  # Return as named list
-  return(list(common = common_peaks, peaks1 = cond1_peaks, peaks2 = cond2_peaks))
-}
+1.  Motif preparation
 
-## Function to obtain peaks that overlap with promoters (±5 kb around the TSS)
-overlap_proms <- function(peaks_orig){
-  overlap_peaks <- peaks_orig[overlapsAny(peaks_orig, proms, type="within"),]
-  # Rank by decreasing
-  peaks_ranked <- overlap_peaks[order(mcols(overlap_peaks)$pValue, decreasing = TRUE)]
-  # Take top N peaks, e.g. top 1000
-  top_peaks <- peaks_ranked[1:1000]
-  seqlevels(top_peaks) <- sub("^chr", "", seqlevels(top_peaks))
-  seqs <- memes::get_sequence(top_peaks, twobit)
+    ```{r motif preparation}
+    # 1. Pull only mouse HOCOMOCOv10, convert
+    motifs <- MotifDb::query(MotifDb, c("Mmusculus", "HOCOMOCOv10"))
+    motifs <- do.call(TFBSTools::PWMatrixList, setNames(
+      universalmotif::convert_motifs(motifs, class="TFBSTools-PWMatrix"),
+      mcols(motifs)$geneSymbol))
 
-  return(seqs)
-}
+    # 2. Subset the motifs to only the high quality ones
+    motifNames <- unique(names(motifs))
+    motifs <- lapply(motifNames, function(motif){
+      redundant_motifs <- motifs[names(motifs)==motif]
+      ids <- unlist(lapply(redundant_motifs, function(m) m@ID))
+      quality_rating <- unlist(tstrsplit(ids, split=".", keep=3, fixed=TRUE))
+      motif <- redundant_motifs[[which(quality_rating==min(quality_rating))]]
+      motif
+    })
 
+    # 3. Convert motifs into the required format
+    names(motifs) <- motifNames
+    motifs <- do.call(PWMatrixList, motifs)
+    ```
 
-## Function to obtain and save motifs
-obtain_motifs <- function(seqs, filename){
-  res <- memes::runAme(seqs, database=convert_motifs(motifs), meme_path="/home/jesslyn/meme/bin")
-  saveRDS(res, file=filename)
-  return(res)
-}
+2.  Define promoter regions
 
-## Function to run motif enrichment analysis
-motif_analysis_by_group <- function(cond1, cond2, filename_common, filename_cond1, filename_cond2){
-  # Obtain common and unique peaks for the conditions
-  peaks_results <- obtain_peaks(cond1, cond2)
-  
-  # Prepare the sequences
-  common_seqs <- overlap_proms(peaks_results$common)
-  cond1_seqs <- overlap_proms(peaks_results$peaks1)
-  cond2_seqs <- overlap_proms(peaks_results$peaks2)
-  
-  # Motif enrichment analysis for each of the group
-  ## Obtain motifs from final peaks (exact peak region)
-  res_common <- obtain_motifs(common_seqs, filename_common)
-  res_cond1 <- obtain_motifs(cond1_seqs, filename_cond1)
-  res_cond2 <- obtain_motifs(cond2_seqs, filename_cond2)
-}
+    The promoter region was defined as ±5 kb around the TSS to keep it consistent with the paper.
 
-## Function to visualize motifs
-motif_visualization <- function(file_name, overlap_val=0.99){
-  res <- readRDS(file_name)
-  filtered_res <- res[res$adj.pvalue < 0.05, ]
-  filtered_res<- filtered_res[order(filtered_res$adj.pvalue, decreasing = FALSE), ]
-  universalmotif::view_motifs(motifs[filtered_res[1:10, ]$motif_id], 
-                              min.overlap = overlap_val, 
-                              RC.text = "", 
-                              names.pos="right")
-}
-```
+    ```{r promoter regions}
+    proms <- promoters(txs, upstream = 5000, downstream = 5000)
+    proms <- keepStandardChromosomes(proms, pruning.mode = "coarse")
+    ```
 
-Load twobit data
+3.  Prepare peaks
 
-```{r}
-## To obtain twobit name
-twobit_results <- AnnotationHub::query(ah, c("GRCm38", "twobit", "dna.primary_assembly"))
+    To obtain peaks for each condition, we performed the naive overlap strategy (<https://www.encodeproject.org/data-standards/atac-seq/atac-encode4/>) on the replicates in each condition. First, for each condition, the aligned files from all replicates were combined and peak calling was performed to get the pooled peaks. To get the set of peaks for each condition, only pooled peaks that overlap (≥50% overlap in peak length) with peaks in the replicates were kept. This ensure reproducibility in the downstream motif enrichment analysis.
 
-## Extract twobit files
-twobit <- ah[["AH88475"]]
-```
+    Next, we prepare the set of peaks that are common and unique between two conditions as defined here:
 
-Motif preparation
+    -   Group 1 (Uninjured and injured Myofibers):
 
-```{r motif preparation}
-## Pull only mouse HOCOMOCOv10, convert
-motifs <- MotifDb::query(MotifDb, c("Mmusculus", "HOCOMOCOv10"))
-motifs <- do.call(TFBSTools::PWMatrixList, setNames(
-  universalmotif::convert_motifs(motifs, class="TFBSTools-PWMatrix"),
-  mcols(motifs)$geneSymbol))
-## Subset the motifs to only the high quality ones in the following way
-motifNames <- unique(names(motifs))
-motifs <- lapply(motifNames, function(motif){
-  redundant_motifs <- motifs[names(motifs)==motif]
-  ids <- unlist(lapply(redundant_motifs, function(m) m@ID))
-  quality_rating <- unlist(tstrsplit(ids, split=".", keep=3, fixed=TRUE))
-  motif <- redundant_motifs[[which(quality_rating==min(quality_rating))]]
-  motif
-})
-names(motifs) <- motifNames
-motifs <- do.call(PWMatrixList, motifs)
-```
+        1.  Peaks common to uninjured and injured Myofibers
 
-Define promoter regions (±5 kb around the TSS)
+        2.  Peaks unique to uninjured Myofibers
 
-```{r}
-txs <- keepSeqlevels(txs, common_seqlevels, pruning.mode = "coarse")
-proms <- promoters(txs, upstream = 5000, downstream = 5000)
-proms <- keepStandardChromosomes(proms, pruning.mode = "coarse")
-```
+        3.  Peaks unique to injured Myofibers
 
-Prepare peaks
+    -   Group 2 (WT and MDX Myofibers):
 
-```{r}
-# Import peaks
-## List the files:
-peakfiles <- list.files("preprocessing/results/peaks", full.names = TRUE, recursive = TRUE)
-peakfiles <- peakfiles[grepl("\\.narrowPeak$", peakfiles)]
-## Give them meaningful names
-names(peakfiles) <- gsub("_[^_]+\\..*$","",basename(peakfiles))
-peaks <- lapply(peakfiles, FUN=rtracklayer::import, format="narrowPeak")
-peaks <- lapply(peaks, clean_seqlevels)
+        1.  Peaks common to WT and MDX Myofibers
 
-ui_peaks <- do.call(c, list(peaks[["SRR14371953"]], peaks[["SRR14371954"]]))
-i_peaks <- do.call(c, list(peaks[["SRR14371955"]], peaks[["SRR14371956"]], peaks[["SRR14371957"]]))
-mdx_peaks <- do.call(c, list(peaks[["SRR15343189"]], peaks[["SRR15343190"]], peaks[["SRR15343191"]]))
-wt_peaks <- do.call(c, list(peaks[["SRR15343192"]], peaks[["SRR15343193"]], peaks[["SRR15343194"]], peaks[["SRR15343195"]]))
-```
+        2.  Peaks unique to WT Myofibers
 
-Run motif enrichment analysis
+        3.  Peaks unique to MDX Myofibers
 
-```{r, eval=FALSE}
-motif_analysis_by_group(mdx_peaks, wt_peaks, "mdx_wt_results.rds", "mdx_results.rds", "wt_results.rds")
-motif_analysis_by_group(ui_peaks, i_peaks, "ui_i_results.rds", "ui_results.rds", "i_results.rds")
-```
+    As the paper did not specify how 'common peaks' were defined, we considered peaks to be common if they overlapped by at least 1 bp, and used the intersection of overlapping regions to represent the shared binding sites. While merging nearby peaks could capture broader regions of regulatory activity, we chose this stricter approach for consistency with the fixed-size peaks used in the paper.
 
-Visualize top 10 enriched motifs
+    Then, we filtered for peaks that overlaps with the promoter regions.
 
-```{r, fig.width=12, fig.height=10, dpi=150}
-motif_visualization("motif_enrichment/motifs/mdx_wt_results.rds")
-motif_visualization("motif_enrichment/motifs/mdx_results.rds")
-motif_visualization("motif_enrichment/motifs/wt_results.rds")
-motif_visualization("motif_enrichment/motifs/ui_i_results.rds")
-motif_visualization("motif_enrichment/motifs/ui_results.rds")
-motif_visualization("motif_enrichment/motifs/i_results.rds")
-```
+    ```{r}
+    ## Function to clean granges
+    clean_seqlevels <- function(granges){
+      granges <- keepSeqlevels(granges, common_seqlevels, pruning.mode = "coarse")
+      return(granges)
+    }
+
+    ## List the files:
+    peakfiles <- list.files("preprocessing/results/peaks", full.names = TRUE)
+    peakfiles <- peakfiles[grepl("\\.narrowPeak$", peakfiles)]
+    ## Give them meaningful names
+    names(peakfiles) <- gsub("_[^_]+\\..*$","",basename(peakfiles))
+    peaks <- lapply(peakfiles, FUN=rtracklayer::import, format="narrowPeak")
+    peaks <- lapply(peaks, clean_seqlevels)
+    ```
+
+    ```{r}
+    ## Function to clean granges
+    clean_seqlevels <- function(granges){
+      granges <- keepSeqlevels(granges, common_seqlevels, pruning.mode = "coarse")
+      return(granges)
+    }
+
+    ## Function to obtain common and unique peaks between two GRanges objects
+    obtain_peaks <- function(cond1, cond2){
+      # Find overlaps
+      hits <- findOverlaps(cond1, cond2)
+      
+      # Common peaks: intersect overlapping regions
+      common_cond1 <- cond1[(queryHits(hits))]
+      common_cond2  <- cond2[(subjectHits(hits))]
+      common_peaks <- pintersect(common_cond1, common_cond2) #since exact peak region used
+      common_peaks <- clean_seqlevels(common_peaks)
+      
+      # Unique peaks for cond1 (non-overlapping)
+      cond1_peaks <- cond1[-unique(queryHits(hits))]
+      cond1_peaks <- clean_seqlevels(cond1_peaks)
+      
+      # Unique peaks for cond2 (non-overlapping)
+      cond2_peaks <- cond2[-unique(subjectHits(hits))]
+      cond2_peaks <- clean_seqlevels(cond2_peaks)
+      
+      # Return as named list
+      return(list(common = common_peaks, peaks1 = cond1_peaks, peaks2 = cond2_peaks))
+    }
+
+    ## Function to obtain sequences of peaks that overlap with promoters (±5 kb around the TSS)
+    overlap_proms <- function(peaks_orig){
+      overlap_peaks <- peaks_orig[overlapsAny(peaks_orig, proms, type="within"),]
+      seqlevels(overlap_peaks) <- sub("^chr", "", seqlevels(overlap_peaks))
+      seqs <- memes::get_sequence(overlap_peaks, twobit)
+
+      return(seqs)
+    }
+    ```
+
+4.  Run motif enrichment analysis
+
+    We performed motif enrichment using MEME’s AME tool (Robert McLeay and Timothy L. Bailey, "Motif Enrichment Analysis: A unified framework and method evaluation", BMC Bioinformatics, 11:165, 2010, <doi:10.1186/1471-2105-11-165>) with its defaults (i.e. `avg` scoring, one‑tailed Fisher’s test, and a shuffled background), rather than the HOMER settings used in the original paper.
+
+    ```{r}
+    # 1. To obtain twobit name
+    twobit_results <- AnnotationHub::query(ah, c("GRCm38", "twobit", "dna.primary_assembly"))
+
+    # 2. Extract twobit files
+    twobit <- ah[["AH88475"]]
+
+    ## Function to obtain and save motifs
+    obtain_motifs <- function(seqs, filename){
+      res <- memes::runAme(seqs, database=convert_motifs(motifs), meme_path="/home/jesslyn/meme/bin")
+      saveRDS(res, file=filename)
+      return(res)
+    }
+
+    ## Function to run motif enrichment analysis
+    motif_analysis_by_group <- function(cond1, cond2, filename_common, filename_cond1, filename_cond2){
+      # Obtain common and unique peaks for the conditions
+      peaks_results <- obtain_peaks(cond1, cond2)
+      
+      # Prepare the sequences
+      common_seqs <- overlap_proms(peaks_results$common)
+      cond1_seqs <- overlap_proms(peaks_results$peaks1)
+      cond2_seqs <- overlap_proms(peaks_results$peaks2)
+      
+      # Motif enrichment analysis for each of the group
+      ## Obtain motifs from final peaks (exact peak region)
+      res_common <- obtain_motifs(common_seqs, filename_common)
+      res_cond1 <- obtain_motifs(cond1_seqs, filename_cond1)
+      res_cond2 <- obtain_motifs(cond2_seqs, filename_cond2)
+    }
+    ```
+
+    ```{r, eval=FALSE}
+    motif_analysis_by_group(peaks$ui_final, peaks$i_final, "ui_i_motifs.rds", "ui_motifs.rds", "i_motifs.rds")
+    motif_analysis_by_group(peaks$mdx_final, peaks$wt_final, "mdx_wt_motifs.rds", "mdx_motifs.rds", "wt_motifs.rds")
+    ```
+
+5.  Visualize top 5 enriched motifs for each set of peaks
+
+    ```{r, fig.width=10, fig.height=10, dpi=150}
+    ## Function to visualize motifs
+    motif_visualization <- function(file_name, overlap_val=0.99, plot_title){
+      res <- readRDS(file_name)
+      filtered_res <- res[res$adj.pvalue < 0.05, ]
+      filtered_res<- filtered_res[order(filtered_res$adj.pvalue, decreasing = FALSE), ]
+      universalmotif::view_motifs(motifs[filtered_res[1:5, ]$motif_id], 
+                                  min.overlap = overlap_val, 
+                                  RC.text = "", 
+                                  names.pos="right") +
+        ggtitle(plot_title) +
+        ggplot2::theme(plot.title = element_text(hjust = 0.5))
+    }
+
+    motif_dir <- "motif_enrichment/motifs/"
+    motif_visualization(paste0(motif_dir, "ui_i_motifs.rds"), plot_title="Top 5 motifs enriched in peaks common to Uninjured and Injured\nMyofibers overlapping the promoters")
+    motif_visualization(paste0(motif_dir, "ui_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to Uninjured Myofibers\noverlapping the promoters")
+    motif_visualization(paste0(motif_dir, "i_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to Injured Myofibers\noverlapping the promoters")
+
+    motif_visualization(paste0(motif_dir, "mdx_wt_motifs.rds"), plot_title="Top 5 motifs enriched in peaks common to MDX and WT Myofibers\noverlapping the promoters")
+    motif_visualization(paste0(motif_dir, "wt_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to WT Myofibers\noverlapping the promoters")
+    motif_visualization(paste0(motif_dir, "mdx_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to MDX Myofibers\noverlapping the promoters")
+    ```
+
+    Our results differed from the original paper's top 5 enriched motifs, likely due to methodological differences between MEME (AME) and HOMER. Some differences that could explain the discrepancies in the results are listed below.
+
++--------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Feature                                          | MEME (AME)                                                                                                                                       | HOMER (findMotifsGenome.pl)                                                                                                                                    | Potential impact                                                                                                                                                          |
++==================================================+==================================================================================================================================================+================================================================================================================================================================+===========================================================================================================================================================================+
+| Motif Databases                                  | User-defined: Here, HOCOMOCOv10 mouse from MotifDb.                                                                                              | Default: Uses a built-in motif library, which consists of a list of previously determined motifs from previous data.                                           | There could be motifs that are only present in one of the databases, which can lead to difference in the motifs that appear significantly enriched.                       |
++--------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Scoring strategy of a single sequence to a motif | Default: Calculates average motif odds score of all positions in the sequence                                                                    | ZOOPS (zero or one occurrences per sequence): Each sequence can have a maximum of one motif hit if the highest scoring match exceeds the predefined threshold. | `avg` can over‑emphasize sequences with many weak matches, whereas ZOOPS strictly counts presence or absence, affecting motif ranking regardless of the statistical test. |
+|                                                  |                                                                                                                                                  |                                                                                                                                                                |                                                                                                                                                                           |
+|                                                  |                                                                                                                                                  |                                                                                                                                                                | For more comparable results between these methods, `totalhits` can be used as the scoring strategy in MEME.                                                               |
++--------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Statistical testing                              | Default: one‑tailed Fisher’s exact test with partition maximization.                                                                             | Default: Binomial test                                                                                                                                         | The difference in statistical test can lead to different p-values and ranking of motifs.                                                                                  |
++--------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Background model                                 | Default: Built from input sequences, using a 0th‑order Markov model of primary sequence nucleotide frequencies, with shuffling of input sequence | Default: Background regions calculated based on the GC/CpG% at regions near the TSS of genes (±5 kb) and split into size of the analyzed regions.              | Differences in background composition, such as GC% content, can greatly affect the enrichment p-values, leading to different top motifs.                                  |
++--------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+Limitations:
+
+1.  We used a naive overlap approach to obtain the set of peaks for each condition, giving us the strongest and most reproducible peak regions. However, due to this, true but variable binding sites that are not captured in all replicates may be lost. To obtain a more confident and reproducible set of peaks, Irreproducible Discovery Rate (IDR) could be used for future work.
+2.  By default MEME (AME), does not take into account the GC content when generating the background model. However, regions near the TSS tend to have high GC content and is a significant source of sequence content bias in mammalian genomes. Hence, the top enriched motifs identified using MEME (AME) may be bias. In future work, a custom background model which take into account the GC content could be created and and defined when running meme::ame.
 
 # Discussion
 
