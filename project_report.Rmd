@@ -77,13 +77,9 @@ Because these batch effects are strongly confounded with the biological conditio
 
 ## Preprocessing
 
-NB: drive points to Jesslyn's coverage traks
-
 In order to generate all the data needed downstream (peaks, counts, coverage tracks) we processed the raw data. Since preprocessing is quite computationally and memory intensive, we performed it on Euler. All code scripts and resulting data are available in the `preprocessing` folder. The coverage tracks were too large for GitHub, so we uploaded them to [Google Drive](https://1drv.ms/f/c/ad47ab1cb526b6da/EiGJACKkCqhAqehU3_HI-AMBXvwKSJhkNprIwYIos2Fupg?e=tbCstp). If you want to rerun the R script, please download the coverage tracks and place them in `preprocessing`\>`results`\>`tracks`.
 
 ### 1. Trimming
-
-NB: refers to Jesslyn's multiqc reports and adapters used
 
 Raw `.sra` files were converted to `.fastq.gz`, followed by adapter trimming using the `trimmomatic` package. Specifically, Illumina NexteraPE-PE adapters were removed. Quality control was performed both before and after trimming using `FastQC` and summarized with `MultiQC`.
 
@@ -91,11 +87,9 @@ knitr::include_graphics(c("images/fastqc_adapter_content_plot.png", "images/fast
 
 ### 2. Alignment
 
-NB: plot refers to Sara's alignment (I didn't have the stats from Jesslyn)
-
 Trimmed reads were aligned to the mm10 mouse genome using `bowtie2`, followed by filtering, sorting, and indexing with `samtools`. Only uniquely mapping reads were retained. The `.bam` files were then filtered for high-quality, uniquely mapped reads (MAPQ ≥ 20), and PCR duplicates were removed using `Picard`. Read groups were added to comply with downstream processing tools. Final sorting and indexing was performed with `samtools`.
 
-knitr::include_graphics("images/bam_summaryplot.png")
+knitr::include_graphics("images/alignment_stats.png")
 
 ### 3. Peak calling
 
