@@ -105,11 +105,15 @@ Peaks were called using `MACS3` on each individual `.bam` file, generating `.nar
 
 To compare chromatin accessibility between conditions, we first combined the peak files from all replicates of each experiment (UI vs. I and WT vs. MDX). We then merged overlapping peaks to create a consensus peak set for each comparison. These consensus peaks represent regions that were accessible in at least one of the samples. Next, we counted how many reads from each sample overlapped with each consensus peak to create a count matrix.
 
-### 5. Coverage Track Generation
+### 6. Coverage Track Generation
 
 For visualization and downstream analyses, normalized bigWig coverage tracks were generated using `bamCoverage` from the `deepTools` suite.
 
-### 6. Load the Preprocessed Data
+### 7. Condition Specific Peak Calling
+
+To define reproducible peaks for each condtion, we used ENCODE's "naive overlap" approach (<https://www.encodeproject.org/data-standards/atac-seq/atac-encode4/>). First, we merged the aligned reads from all replicates per condition and called peaks on the pooled data. We then retained only those pooled peaks that overlapped by ≥50 % of their length with peaks from replicates. This filtering step ensures that downstream motif enrichment is based on robust, reproducible peak regions.
+
+### 8. Load the Preprocessed Data
 
 For the subsequent analysis, we load the merged coverage tracks and count matrices from both experiments into this R Markdown document.
 
@@ -639,8 +643,6 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
 3.  Prepare peaks
 
-    To obtain peaks for each condition, we performed the naive overlap strategy (<https://www.encodeproject.org/data-standards/atac-seq/atac-encode4/>) on the replicates in each condition. First, for each condition, the aligned files from all replicates were combined and peak calling was performed to get the pooled peaks. To get the set of peaks for each condition, only pooled peaks that overlap (≥50% overlap in peak length) with peaks in the replicates were kept. This ensure reproducibility in the downstream motif enrichment analysis.
-
     Next, we prepare the set of peaks that are common and unique between two conditions as defined here:
 
     -   Group 1 (Uninjured and injured Myofibers):
@@ -755,12 +757,20 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
     }
     ```
 
+    ```{r}
+    motif_dir <- "motif_enrichment/motifs/"
+    ```
+
     ```{r, eval=FALSE}
-    motif_analysis_by_group(peaks$ui_final, peaks$i_final, "ui_i_motifs.rds", "ui_motifs.rds", "i_motifs.rds")
-    motif_analysis_by_group(peaks$mdx_final, peaks$wt_final, "mdx_wt_motifs.rds", "mdx_motifs.rds", "wt_motifs.rds")
+    motif_analysis_by_group(peaks$ui_final, peaks$i_final, paste0(motif_dir, "ui_i_motifs.rds"), paste0(motif_dir, "ui_motifs.rds"), paste0(motif_dir, "i_motifs.rds"))
+    motif_analysis_by_group(peaks$mdx_final, peaks$wt_final, paste0(motif_dir, "mdx_wt_motifs.rds"), paste0(motif_dir, "mdx_motifs.rds"), paste0(motif_dir, "wt_motifs.rds"))
     ```
 
 5.  Visualize top 5 enriched motifs for each set of peaks
+
+    Similar to the paper, we filtered for enriched motifs within each set of peaks with a adjusted p-value less than 0.05 and ranked them based on increasing adjusted p-value.
+
+    For brevity, only the ‘common’ peak comparisons are shown here. Motif logo plots for the unique uninjured, unique injured, unique WT, and unique MDX sets are available in Supplementary Figure X.
 
     ```{r, fig.width=10, fig.height=10, dpi=150}
     ## Function to visualize motifs
@@ -776,17 +786,14 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
         ggplot2::theme(plot.title = element_text(hjust = 0.5))
     }
 
-    motif_dir <- "motif_enrichment/motifs/"
     motif_visualization(paste0(motif_dir, "ui_i_motifs.rds"), plot_title="Top 5 motifs enriched in peaks common to Uninjured and Injured\nMyofibers overlapping the promoters")
-    motif_visualization(paste0(motif_dir, "ui_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to Uninjured Myofibers\noverlapping the promoters")
-    motif_visualization(paste0(motif_dir, "i_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to Injured Myofibers\noverlapping the promoters")
 
     motif_visualization(paste0(motif_dir, "mdx_wt_motifs.rds"), plot_title="Top 5 motifs enriched in peaks common to MDX and WT Myofibers\noverlapping the promoters")
-    motif_visualization(paste0(motif_dir, "wt_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to WT Myofibers\noverlapping the promoters")
-    motif_visualization(paste0(motif_dir, "mdx_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to MDX Myofibers\noverlapping the promoters")
     ```
 
-    Our results differed from the original paper's top 5 enriched motifs, likely due to methodological differences between MEME (AME) and HOMER. Some differences that could explain the discrepancies in the results are listed below.
+    Unfortunately, our results differed from the original paper’s top five enriched motifs and did not show substantial differences in motif enrichment between the different sets of peaks. This discrepancy is likely due to methodological differences between MEME (AME) and HOMER, some of which are outlined below.
+
+![Comparison of the top 5 enriched motifs identified in the paper versus our analysis (UI = Uninjured, I = Injured)](images/enriched_motifs_comparison.png){width="744"}
 
 +--------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | Feature                                          | MEME (AME)                                                                                                                                       | HOMER (findMotifsGenome.pl)                                                                                                                                    | Potential impact                                                                                                                                                          |
@@ -805,13 +812,21 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 Limitations:
 
 1.  We used a naive overlap approach to obtain the set of peaks for each condition, giving us the strongest and most reproducible peak regions. However, due to this, true but variable binding sites that are not captured in all replicates may be lost. To obtain a more confident and reproducible set of peaks, Irreproducible Discovery Rate (IDR) could be used for future work.
-2.  By default MEME (AME), does not take into account the GC content when generating the background model. However, regions near the TSS tend to have high GC content and is a significant source of sequence content bias in mammalian genomes. Hence, the top enriched motifs identified using MEME (AME) may be bias. In future work, a custom background model which take into account the GC content could be created and and defined when running meme::ame.
+2.  By default MEME (AME), does not take into account the GC content when generating the background model. However, regions near the TSS tend to have high GC content and is a significant source of sequence content bias in mammalian genomes. Hence, the top enriched motifs identified using MEME (AME) may be bias. In future work, a custom background model which take into account the GC content could be created and defined when running AME.
 
 # Discussion
 
 # References
 
 # Appendix
+
+```{r, fig.width=10, fig.height=10, dpi=150 remaining motif logo plots}
+motif_visualization(paste0(motif_dir, "ui_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to Uninjured Myofibers\noverlapping the promoters")
+motif_visualization(paste0(motif_dir, "i_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to Injured Myofibers\noverlapping the promoters")
+
+motif_visualization(paste0(motif_dir, "wt_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to WT Myofibers\noverlapping the promoters")
+motif_visualization(paste0(motif_dir, "mdx_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to MDX Myofibers\noverlapping the promoters")
+```
 
 ## Session Information
 
