@@ -2,7 +2,7 @@
 #SBATCH --job-name=align
 #SBATCH --output=logs/align_%A_%a.out
 #SBATCH --error=logs/align_%A_%a.err
-#SBATCH --time=3:00:00
+#SBATCH --time=48:00:00
 #SBATCH --mem-per-cpu=8G
 #SBATCH --cpus-per-task=4
 #SBATCH --array=1-12%4
