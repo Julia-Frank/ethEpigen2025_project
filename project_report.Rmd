@@ -634,7 +634,7 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
 2.  Define promoter regions
 
-    The promoter region was defined as ±5 kb around the TSS to keep it consistent with the paper.
+    The promoter regions were defined as ±5 kb around the TSS to keep it consistent with the paper.
 
     ```{r promoter regions}
     proms <- promoters(txs, upstream = 5000, downstream = 5000)
@@ -643,7 +643,7 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
 3.  Prepare peaks
 
-    Next, we prepare the set of peaks that are common and unique between two conditions as defined here:
+    Next, we prepared the set of peaks that are common and unique between two conditions as defined here:
 
     -   Group 1 (Uninjured and injured Myofibers):
 
@@ -663,7 +663,7 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
     As the paper did not specify how 'common peaks' were defined, we considered peaks to be common if they overlapped by at least 1 bp, and used the intersection of overlapping regions to represent the shared binding sites. While merging nearby peaks could capture broader regions of regulatory activity, we chose this stricter approach for consistency with the fixed-size peaks used in the paper.
 
-    Then, we filtered for peaks that overlaps with the promoter regions.
+    Then, we filtered for peaks that overlap with the promoter regions.
 
     ```{r}
     ## Function to clean granges
@@ -723,7 +723,7 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
 4.  Run motif enrichment analysis
 
-    We performed motif enrichment using MEME’s AME tool (Robert McLeay and Timothy L. Bailey, "Motif Enrichment Analysis: A unified framework and method evaluation", BMC Bioinformatics, 11:165, 2010, <doi:10.1186/1471-2105-11-165>) with its defaults (i.e. `avg` scoring, one‑tailed Fisher’s test, and a shuffled background), rather than the HOMER settings used in the original paper.
+    We performed motif enrichment using MEME’s AME tool (Robert McLeay and Timothy L. Bailey, "Motif Enrichment Analysis: A unified framework and method evaluation", BMC Bioinformatics, 11:165, 2010, <doi:10.1186/1471-2105-11-165>) with its defaults (i.e. `avg` scoring, one‑tailed Fisher’s test, and a shuffled background), rather than HOMER used in the original paper.
 
     ```{r}
     # 1. To obtain twobit name
@@ -770,7 +770,7 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
     Similar to the paper, we filtered for enriched motifs within each set of peaks with a adjusted p-value less than 0.05 and ranked them based on increasing adjusted p-value.
 
-    For brevity, only the ‘common’ peak comparisons are shown here. Motif logo plots for the unique uninjured, unique injured, unique WT, and unique MDX sets are available in Supplementary Figure X.
+    For brevity, only the ‘common’ peak comparisons are shown here. Motif logo plots for the unique uninjured, unique injured, unique WT, and unique MDX sets are available in Appendix.
 
     ```{r, fig.width=10, fig.height=10, dpi=150}
     ## Function to visualize motifs
@@ -813,8 +813,8 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
 Limitations:
 
-1.  We used a naive overlap approach to obtain the set of peaks for each condition, giving us the strongest and most reproducible peak regions. However, due to this, true but variable binding sites that are not captured in all replicates may be lost. To obtain a more confident and reproducible set of peaks, Irreproducible Discovery Rate (IDR) could be used for future work.
-2.  By default MEME (AME), does not take into account the GC content when generating the background model. However, regions near the TSS tend to have high GC content and is a significant source of sequence content bias in mammalian genomes. Hence, the top enriched motifs identified using MEME (AME) may be bias. In future work, a custom background model which take into account the GC content could be created and defined when running AME.
+1.  We used a naive‐overlap approach to define peaks for each condition, which yields the most robust and reproducible regions but may miss true binding sites that are variable across replicates. In future work, applying an Irreproducible Discovery Rate (IDR) framework could capture a more confident and reproducible set of peaks.
+2.  By default, MEME’s AME tool does not correct for GC‐content bias when generating its background model. Because promoter regions (±5 kb of TSS) are inherently GC‐rich, this omission can inflate enrichment statistics for GC‐rich motifs. To address this, future analyses should employ a custom, GC‐matched background when running AME.
 
 # Discussion
 
