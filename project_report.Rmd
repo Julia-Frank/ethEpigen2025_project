@@ -97,6 +97,8 @@ knitr::include_graphics("images/alignment_stats.png")
 
 *Fig. 1: The horizontal bar plot shows the number of reads that mapped uniquely, mapped to multiple locations, or did not map at all for each sample.*
 
+Many reads map to multiple genomic regions, which reduces the number of uniquely aligned reads retained for downstream analysis. As a result, the average unique mapping rate of around 50% is quite low.
+
 ### 3. Peak calling
 
 Peaks were called using `MACS3` on each individual `.bam` file, generating `.narrowPeak` files representing regions of open chromatin.
@@ -667,11 +669,15 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
     Next, we prepared the set of peaks that are common and unique between two conditions as defined here:
 
-    | Group 1 (Uninjured and injured Myofibers) | Group 2 (WT and MDX Myofibers) |
-    |----|----|
+    +-------------------------------------------------+--------------------------------------+
+    | Group 1 (Uninjured and injured Myofibers)       | Group 2 (WT and MDX Myofibers)       |
+    +=================================================+======================================+
     | Peaks common to uninjured and injured Myofibers | Peaks common to WT and MDX Myofibers |
-    | Peaks unique to uninjured Myofibers | Peaks unique to WT Myofibers |
-    | Peaks unique to injured Myofibers | Peaks unique to MDX Myofibers |
+    +-------------------------------------------------+--------------------------------------+
+    | Peaks unique to uninjured Myofibers             | Peaks unique to WT Myofibers         |
+    +-------------------------------------------------+--------------------------------------+
+    | Peaks unique to injured Myofibers               | Peaks unique to MDX Myofibers        |
+    +-------------------------------------------------+--------------------------------------+
 
     *Table 1: Peak Categories Across Myofiber Conditions.*
 
