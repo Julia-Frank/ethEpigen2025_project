@@ -77,7 +77,7 @@ Because these batch effects are strongly confounded with the biological conditio
 
 ## Preprocessing
 
-In order to generate all the data needed downstream (peaks, counts, coverage tracks) we processed the raw data. Since preprocessing is quite computationally and memory intensive, we performed it on Euler. All code scripts and resulting data are available in the `preprocessing` folder. The coverage tracks were too large for GitHub, so we uploaded them to [OneDrive](https://1drv.ms/f/c/ad47ab1cb526b6da/EiGJACKkCqhAqehU3_HI-AMBXvwKSJhkNprIwYIos2Fupg?e=tbCstp). If you want to rerun the R script, please download the coverage tracks and place them in `preprocessing`\>`results`\>`tracks`.
+In order to generate all the data needed downstream (peaks, counts, coverage tracks), we processed the raw data. Since preprocessing is quite computationally and memory intensive, we performed it on Euler. All code scripts and resulting data are available in the `preprocessing` folder. The coverage tracks were too large for GitHub, so we uploaded them to [OneDrive](https://1drv.ms/f/c/ad47ab1cb526b6da/EiGJACKkCqhAqehU3_HI-AMBXvwKSJhkNprIwYIos2Fupg?e=tbCstp). If you want to rerun the R script, please download the coverage tracks and place them in `preprocessing`\>`results`\>`tracks`.
 
 ### 1. Trimming
 
@@ -673,9 +673,7 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
     names(peakfiles) <- gsub("_[^_]+\\..*$","",basename(peakfiles))
     peaks <- lapply(peakfiles, FUN=rtracklayer::import, format="narrowPeak")
     peaks <- lapply(peaks, clean_seqlevels)
-    ```
 
-    ```{r}
     ## Function to clean granges
     clean_seqlevels <- function(granges){
       granges <- keepSeqlevels(granges, common_seqlevels, pruning.mode = "coarse")
@@ -749,11 +747,11 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
       res_cond1 <- obtain_motifs(cond1_seqs, filename_cond1)
       res_cond2 <- obtain_motifs(cond2_seqs, filename_cond2)
     }
-    ```
 
-    ```{r}
     motif_dir <- "motif_enrichment/motifs/"
     ```
+
+    Due to difficulties installing MEME on Windows, the motif enrichment analysis chunk has been set to `eval = FALSE`. To rerun the analysis, set `eval = TRUE`.
 
     ```{r, eval=FALSE}
     motif_analysis_by_group(peaks$ui_final, peaks$i_final, paste0(motif_dir, "ui_i_motifs.rds"), paste0(motif_dir, "ui_motifs.rds"), paste0(motif_dir, "i_motifs.rds"))
@@ -803,7 +801,7 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 | Background model                                 | Default: Built from input sequences, using a 0th‑order Markov model of primary sequence nucleotide frequencies, with shuffling of input sequence | Default: Background regions calculated based on the GC/CpG% at regions near the TSS of genes (±5 kb) and split into size of the analyzed regions.              | Differences in background composition, such as GC% content, can greatly affect the enrichment p-values, leading to different top motifs.                                  |
 +--------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 
-: Comparison of MEME (AME) and HOMER (findMotifsGenome.pl) features and the potential impact.
+: Comparison of MEME (AME) and HOMER (findMotifsGenome.pl) features and their potential impact.
 
 Limitations:
 
