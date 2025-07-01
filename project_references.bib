@@ -10,3 +10,44 @@
   pmcid        = {PMC8901173},
   url          = {https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8901173/}
 }
+
+@misc{ATACseqDataStandards,
+  title = {{{ATAC-seq Data Standards}} and {{Processing Pipeline}} -- {{ENCODE}}},
+  urldate = {2025-06-30},
+  howpublished = {https://www.encodeproject.org/atac-seq/}
+}
+
+@article{heinzSimpleCombinationsLineageDetermining2010,
+  title = {Simple {{Combinations}} of {{Lineage-Determining Transcription Factors Prime}} Cis-{{Regulatory Elements Required}} for {{Macrophage}} and {{B Cell Identities}}},
+  author = {Heinz, Sven and Benner, Christopher and Spann, Nathanael and Bertolino, Eric and Lin, Yin C. and Laslo, Peter and Cheng, Jason X. and Murre, Cornelis and Singh, Harinder and Glass, Christopher K.},
+  year = {2010},
+  month = may,
+  journal = {Molecular Cell},
+  volume = {38},
+  number = {4},
+  pages = {576--589},
+  issn = {10972765},
+  doi = {10.1016/j.molcel.2010.05.004},
+  urldate = {2025-06-30},
+  abstract = {Genome-scale studies have revealed extensive, cell type-specific colocalization of transcription factors, but the mechanisms underlying this phenomenon remain poorly understood. Here, we demonstrate in macrophages and B cells that collaborative interactions of the common factor PU.1 with small sets of macrophage- or B cell lineage-determining transcription factors establish cell-specific binding sites that are associated with the majority of promoterdistal H3K4me1-marked genomic regions. PU.1 binding initiates nucleosome remodeling, followed by H3K4 monomethylation at large numbers of genomic regions associated with both broadly and specifically expressed genes. These locations serve as beacons for additional factors, exemplified by liver X receptors, which drive both cell-specific gene expression and signal-dependent responses. Together with analyses of transcription factor binding and H3K4me1 patterns in other cell types, these studies suggest that simple combinations of lineage-determining transcription factors can specify the genomic sites ultimately responsible for both cell identity and cell type-specific responses to diverse signaling inputs.},
+  copyright = {https://www.elsevier.com/tdm/userlicense/1.0/},
+  langid = {english}
+}
+
+@article{mcleayMotifEnrichmentAnalysis2010a,
+  title = {Motif {{Enrichment Analysis}}: A Unified Framework and an Evaluation on {{ChIP}} Data},
+  shorttitle = {Motif {{Enrichment Analysis}}},
+  author = {McLeay, Robert C and Bailey, Timothy L},
+  year = {2010},
+  month = dec,
+  journal = {BMC Bioinformatics},
+  volume = {11},
+  number = {1},
+  pages = {165},
+  issn = {1471-2105},
+  doi = {10.1186/1471-2105-11-165},
+  urldate = {2025-06-30},
+  abstract = {Background: A major goal of molecular biology is determining the mechanisms that control the transcription of genes. Motif Enrichment Analysis (MEA) seeks to determine which DNA-binding transcription factors control the transcription of a set of genes by detecting enrichment of known binding motifs in the genes' regulatory regions. Typically, the biologist specifies a set of genes believed to be co-regulated and a library of known DNA-binding models for transcription factors, and MEA determines which (if any) of the factors may be direct regulators of the genes. Since the number of factors with known DNA-binding models is rapidly increasing as a result of high-throughput technologies, MEA is becoming increasingly useful. In this paper, we explore ways to make MEA applicable in more settings, and evaluate the efficacy of a number of MEA approaches. Results: We first define a mathematical framework for Motif Enrichment Analysis that relaxes the requirement that the biologist input a selected set of genes. Instead, the input consists of all regulatory regions, each labeled with the level of a biological signal. We then define and implement a number of motif enrichment analysis methods. Some of these methods require a user-specified signal threshold, some identify an optimum threshold in a data-driven way and two of our methods are threshold-free. We evaluate these methods, along with two existing methods (Clover and PASTAA), using yeast ChIP-chip data. Our novel threshold-free method based on linear regression performs best in our evaluation, followed by the data-driven PASTAA algorithm. The Clover algorithm performs as well as PASTAA if the userspecified threshold is chosen optimally. Data-driven methods based on three statistical tests--Fisher Exact Test, ranksum test, and multi-hypergeometric test---perform poorly, even when the threshold is chosen optimally. These methods (and Clover) perform even worse when unrestricted data-driven threshold determination is used. Conclusions: Our novel, threshold-free linear regression method works well on ChIP-chip data. Methods using datadriven threshold determination can perform poorly unless the range of thresholds is limited a priori. The limits implemented in PASTAA, however, appear to be well-chosen. Our novel algorithms---AME (Analysis of Motif Enrichment)---are available at http://bioinformatics.org.au/ame/.},
+  copyright = {http://creativecommons.org/licenses/by/2.0},
+  langid = {english}
+}
