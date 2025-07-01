@@ -822,6 +822,33 @@ motif_visualization(paste0(motif_dir, "wt_motifs.rds"), plot_title="Top 5 motifs
 motif_visualization(paste0(motif_dir, "mdx_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to MDX Myofibers\noverlapping the promoters")
 ```
 
+```{python}
+pip install pandas matplotlib seaborn
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import seaborn as sns
+
+df=pd.read_csv("preprocessing/results/alignment/bowtie_stats.csv", sep=';')
+
+sns.set(style='whitegrid')
+fig, ax = plt.subplots(figsize=(10, 6))
+
+df.set_index('Sample')[['Unique', 'MultiMapped', 'Unmapped']].plot(
+    kind='barh',
+    stacked=True,
+    color={'Unique':'#1f78b4', 'MultiMapped':'#a6cee3', 'Unmapped':'#e31a1c'},
+    ax=ax
+)
+
+ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, pos: f'{int(x/1e6)}M'))
+
+ax.set_xlabel('Read count')
+ax.set_title('Alignment summary')
+plt.tight_layout()
+plt.show()
+```
 ## Session Information
 
 ```{r}
