@@ -5,6 +5,9 @@ date: "2025-06-24"
 output: 
   html_document:
     code_folding: hide
+    toc: true          # include TOC
+    toc_float: true    # makes the TOC float as a sidebar
+    toc_depth: 4       # how many heading levels to include (1, 2, 3...)
 bibliography: project_references.bib
 link-citations: TRUE 
 ---
@@ -50,6 +53,7 @@ suppressPackageStartupMessages({
   library(TFBSTools)
   library(Biostrings)
   library(ggrepel)
+  library(patchwork)
 })
 ```
 
@@ -86,6 +90,12 @@ Raw `.sra` files were converted to `.fastq.gz`, followed by adapter trimming usi
 ### 2. Alignment
 
 Trimmed reads were aligned to the mm10 mouse genome using `bowtie2`, followed by filtering, sorting, and indexing with `samtools`. Only uniquely mapping reads were retained. The `.bam` files were then filtered for high-quality, uniquely mapped reads (MAPQ ≥ 20), and PCR duplicates were removed using `Picard`. Read groups were added to comply with downstream processing tools. Final sorting and indexing was performed with `samtools`.
+
+```{r, echo=FALSE, out.width="80%", fig.align='center'}
+knitr::include_graphics("images/alignment_stats.png")
+```
+
+*Fig. 1: The horizontal bar plot shows the number of reads that mapped uniquely, mapped to multiple locations, or did not map at all for each sample.*
 
 ### 3. Peak calling
 
@@ -153,7 +163,7 @@ counts2$Geneid <- NULL
 
 We plotted the enrichment of ATAC-seq signal around transcription start sites (TSSs) to assess data quality and validate that our assay accurately captured regions of open chromatin. Since TSSs are typically located in accessible, nucleosome-depleted regions of active genes, we expected to observe strong signal enrichment at these sites.
 
-```{r TSS enrichment}
+```{r TSS enrichment, fig.align='center'}
 # 1. Load the Ensembl Transcript Database for mouse
 ah <- AnnotationHub()
 
@@ -194,7 +204,7 @@ hm <- epiwraps::plotEnrichedHeatmaps(tss_matrix, trim = 0.95, colors = c("white"
 draw(hm, column_title = title)
 ```
 
-*Fig. 1: Heatmap showing the ATAC-seq signal around the transcription start sites (TSS) of uninjured, injured, WT, and MDX myofibers.*
+*Fig. 2: Heatmap showing the ATAC-seq signal around the transcription start sites (TSS) of uninjured, injured, WT, and MDX myofibers.*
 
 The heatmap shows a clear enrichment of ATAC-seq signal at transcription start sites, indicating that chromatin accessibility is highest near gene promoters. This pattern confirms the expected biological behavior, where regulatory elements around the TSS are more open and accessible for transcription machinery binding. The slight upstream shift of the peaks suggests that many transcription factors preferentially bind just before the TSS.
 
@@ -248,7 +258,7 @@ norm_counts2 <- process_mat(counts2)
 
 Pearson correlation heatmaps were generated from the normalized count data to evaluate the similarity between replicates within each experimental condition.
 
-```{r correlation heatmap}
+```{r correlation heatmap, fig.align='center'}
 # PEARSON CORRELATION HEATMAPS
 
 # Compute Pearson correlation matrices for normalized counts
@@ -292,7 +302,7 @@ grid.arrange(
 
 ```
 
-*Fig. 2: Heatmaps of Pearson correlation coefficients based on normalized ATAC-seq counts, illustrating the correlation between replicates in the Uninjured vs. Injured comparison (left) and the WT vs. MDX comparison (right).*
+*Fig. 3: Heatmaps of Pearson correlation coefficients based on normalized ATAC-seq counts, illustrating the correlation between replicates in the Uninjured vs. Injured comparison (left) and the WT vs. MDX comparison (right).*
 
 Overall, the Pearson correlation is very high for all samples, with correlation coefficients consistently above 0.95 regardless of condition. In the Uninjured vs. Injured experiment, the injured replicates clearly cluster more closely together than with the uninjured ones. However, the uninjured replicates appear more similar to the injured samples than to the other uninjured replicate. For the MDX vs. WT experiment, there is no clear difference in correlation between replicates of the same condition compared to samples from the other condition.
 
@@ -300,7 +310,7 @@ Overall, the Pearson correlation is very high for all samples, with correlation 
 
 Next, we performed a Principal Component Analysis to visualize how close the samples cluster together.
 
-```{r pca, fig.width=10, fig.height=5}
+```{r pca, fig.width=10, fig.height=5, fig.align='center'}
 # PCA
 
 # Function to extract condition based on the sample name
@@ -369,13 +379,13 @@ annotate_figure(
 
 ```
 
-*Fig. 3: Principal component analysis (PCA) plot showing samples along the first two principal components for Uninjured vs. Injured (left) and MDX vs. WT (right).*
+*Fig. 4: Principal component analysis (PCA) plot showing samples along the first two principal components for Uninjured vs. Injured (left) and MDX vs. WT (right).*
 
 In the PCA plots, samples clearly separate based on their experimental conditions, indicating distinct chromatin accessibility profiles.
 
 ### Hierarchical Clustering between replicates
 
-```{r hierarchical clustering, fig.width=8, fig.height=4}
+```{r hierarchical clustering, fig.width=8, fig.height=4,  fig.align='center'}
 # HIERARCHICAL CLUSTERING
 
 # Function to perform hierarchical clustering and plot dendrogram 
@@ -407,13 +417,13 @@ par(mfrow = c(1, 1), oma = c(0, 0, 0, 0))
 
 ```
 
-*Fig. 4: Hierarchical clustering dendrograms of normalized ATAC-seq counts showing sample relationships for Uninjured vs. Injured (left) and MDX vs. WT (right) conditions.*
+*Fig. 5: Hierarchical clustering dendrograms of normalized ATAC-seq counts showing sample relationships for Uninjured vs. Injured (left) and MDX vs. WT (right) conditions.*
 
 As noted in the Pearson Correlation Heatmaps, the injured replicates cluster tightly together, while the uninjured replicates do not cluster as closely with each other and instead appear closer to the injured samples. In the MDX vs. WT comparison, replicates do not consistently cluster together by condition.
 
 ## Differential accessibility analysis
 
-```{r differential accessibility analysis, warning=FALSE}
+```{r differential accessibility analysis, warning=FALSE, fig.align='center'}
 # Function to run the differential accessibility analysis
 run_deseq2 <- function(count_mat, baseline_condition, contrast_condition, name = "") {
   # 1. Convert to numeric matrix
@@ -606,7 +616,7 @@ volcano_combined <- ggplot(combined_res, aes(x = logFC, y = -log10(padj))) +
 print(volcano_combined)
 ```
 
-*Fig. 5: Volcano plots of differential chromatin accessibility between conditions for Uninjured vs. Injured (left) and WT vs. MDX (right). Points represent peaks colored by significance, with top significant peaks labeled by their nearest gene and distance to that gene.*
+*Fig. 6: Volcano plots of differential chromatin accessibility between conditions for Uninjured vs. Injured (left) and WT vs. MDX (right). Points represent peaks colored by significance, with top significant peaks labeled by their nearest gene and distance to that gene.*
 
 The volcano plot comparing Uninjured vs. Injured samples shows much larger log-fold changes, indicating stronger shifts in accessibility for individual regions. In contrast, the WT vs. MDX comparison reveals a higher number of significantly differentially accessible regions overall, despite generally smaller fold changes.
 
@@ -657,21 +667,13 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
     Next, we prepared the set of peaks that are common and unique between two conditions as defined here:
 
-    -   Group 1 (Uninjured and injured Myofibers):
+    | Group 1 (Uninjured and injured Myofibers) | Group 2 (WT and MDX Myofibers) |
+    |----|----|
+    | Peaks common to uninjured and injured Myofibers | Peaks common to WT and MDX Myofibers |
+    | Peaks unique to uninjured Myofibers | Peaks unique to WT Myofibers |
+    | Peaks unique to injured Myofibers | Peaks unique to MDX Myofibers |
 
-        1.  Peaks common to uninjured and injured Myofibers
-
-        2.  Peaks unique to uninjured Myofibers
-
-        3.  Peaks unique to injured Myofibers
-
-    -   Group 2 (WT and MDX Myofibers):
-
-        1.  Peaks common to WT and MDX Myofibers
-
-        2.  Peaks unique to WT Myofibers
-
-        3.  Peaks unique to MDX Myofibers
+    *Table 1: Peak Categories Across Myofiber Conditions.*
 
     As the paper did not specify how 'common peaks' were defined, we considered peaks to be common if they overlapped by at least 1 bp, and used the intersection of overlapping regions to represent the shared binding sites. While merging nearby peaks could capture broader regions of regulatory activity, we chose this stricter approach for consistency with the fixed-size peaks used in the paper.
 
@@ -780,11 +782,11 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
     Similar to the paper, we filtered for enriched motifs within each set of peaks with a adjusted p-value less than 0.05 and ranked them based on increasing adjusted p-value.
 
-    For brevity, only the ‘common’ peak comparisons are shown here. Motif logo plots for the unique uninjured, unique injured, unique WT, and unique MDX sets are available in Appendix.
+    For brevity, only the ‘common’ peak comparisons are shown here. Motif logo plots for the unique uninjured, unique injured, unique WT, and unique MDX sets are available in Supplementary Fig. 1.
 
-    ```{r, fig.width=8, fig.height=8, dpi=150}
+    ```{r, fig.width=14, fig.height=10, dpi=150, fig.align='center', fig.show='hold'}
     ## Function to visualize motifs
-    motif_visualization <- function(file_name, overlap_val=0.99, plot_title){
+    motif_visualization <- function(file_name, plot_title, overlap_val=0.99){
       res <- readRDS(file_name)
       filtered_res <- res[res$adj.pvalue < 0.05, ]
       filtered_res<- filtered_res[order(filtered_res$adj.pvalue, decreasing = FALSE), ]
@@ -796,14 +798,23 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
         ggplot2::theme(plot.title = element_text(hjust = 0.5))
     }
 
-    motif_visualization(paste0(motif_dir, "ui_i_motifs.rds"), plot_title="Top 5 motifs enriched in peaks common to Uninjured and Injured\nMyofibers overlapping the promoters")
+    p1 <- motif_visualization(paste0(motif_dir, "ui_i_motifs.rds"), "(a) Top 5 motifs enriched in peaks common to Uninjured\nand Injured Myofibers overlapping the promoters")
 
-    motif_visualization(paste0(motif_dir, "mdx_wt_motifs.rds"), plot_title="Top 5 motifs enriched in peaks common to MDX and WT Myofibers\noverlapping the promoters")
+    p2 <- motif_visualization(paste0(motif_dir, "mdx_wt_motifs.rds"), "(b) Top 5 motifs enriched in peaks common to WT\nand MDX Myofibers overlapping the promoters")
+    combined <- p1 + p2 + plot_layout(ncol = 2)
+    combined
     ```
+
+    *Fig. 7: Top 5 enriched motifs in ATAC-Seq peaks overlapping the promoter regions (±5 kb) and common to (a) Uninjured and Injured Myofibers, (b) WT and MDX Myofibers.*
 
     Unfortunately, our results differed from the original paper’s top five enriched motifs and did not show substantial differences in motif enrichment between the different sets of peaks. This discrepancy is likely due to methodological differences between MEME (AME) and HOMER, some of which are outlined below.
 
-![Comparison of the top 5 enriched motifs identified in the paper versus our analysis (UI = Uninjured, I = Injured)](images/enriched_motifs_comparison.png){width="744"}
+```{r, echo=FALSE, out.width="100%", fig.align='center'}
+
+knitr::include_graphics("images/enriched_motifs_comparison.png")
+```
+
+*Table 2: Comparison of the top 5 enriched motifs identified in the paper versus our analysis (UI = Uninjured, I = Injured)*
 
 +--------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 | Feature                                          | MEME (AME) [@mcleayMotifEnrichmentAnalysis2010a]                                                                                                 | HOMER (findMotifsGenome.pl) [@heinzSimpleCombinationsLineageDetermining2010]                                                                                   | Potential impact                                                                                                                                                          |
@@ -819,12 +830,12 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 | Background model                                 | Default: Built from input sequences, using a 0th‑order Markov model of primary sequence nucleotide frequencies, with shuffling of input sequence | Default: Background regions calculated based on the GC/CpG% at regions near the TSS of genes (±5 kb) and split into size of the analyzed regions.              | Differences in background composition, such as GC% content, can greatly affect the enrichment p-values, leading to different top motifs.                                  |
 +--------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 
-: Comparison of MEME (AME) and HOMER (findMotifsGenome.pl) features and their potential impact.
+*Table 3: Comparison of MEME (AME) and HOMER (findMotifsGenome.pl) features and their potential impact.*
 
 Limitations:
 
 1.  We used a naive‐overlap approach to define peaks for each condition, which yields the most robust and reproducible regions but may miss true binding sites that are variable across replicates. In future work, applying an Irreproducible Discovery Rate (IDR) framework could capture a more confident and reproducible set of peaks [@ATACseqDataStandards].
-2.  By default, MEME’s AME tool does not correct for GC‐content bias when generating its background model. Because promoter regions (±5 kb of TSS) are inherently GC‐rich, this omission can inflate enrichment statistics for GC‐rich motifs [@heinzSimpleCombinationsLineageDetermining2010]. To address this, future analyses should employ a custom, GC‐matched background when running AME.
+2.  By default, MEME’s AME tool does not correct for GC‐content bias when generating its background model. Since promoter regions (±5 kb of TSS) are inherently GC‐rich, this omission can inflate enrichment statistics for GC‐rich motifs [@heinzSimpleCombinationsLineageDetermining2010]. This is consistent with our results (Fig. 7 and Supplementary Fig. 1), where most identified motifs exhibit high GC content. To address this, future analyses should employ a custom, GC‐matched background when running AME.
 
 # Discussion
 
@@ -832,13 +843,9 @@ Limitations:
 
 # Appendix
 
-```{r, fig.width=8, fig.height=8, dpi=150}
-motif_visualization(paste0(motif_dir, "ui_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to Uninjured Myofibers\noverlapping the promoters")
-motif_visualization(paste0(motif_dir, "i_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to Injured Myofibers\noverlapping the promoters")
+## Code for Generating Figure 2 (Main Text)
 
-motif_visualization(paste0(motif_dir, "wt_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to WT Myofibers\noverlapping the promoters")
-motif_visualization(paste0(motif_dir, "mdx_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to MDX Myofibers\noverlapping the promoters")
-```
+The following Python code was used to generate the alignment summary plot shown in the main body of the report.
 
 ```{python, eval=FALSE}
 pip install pandas matplotlib seaborn
@@ -867,6 +874,22 @@ ax.set_title('Alignment summary')
 plt.tight_layout()
 plt.show()
 ```
+
+## Supplementary Fig. 1
+
+```{r, fig.width=14, fig.height=20, dpi=150, fig.show='hold'}
+
+p1 <- motif_visualization(paste0(motif_dir, "ui_motifs.rds"), plot_title="(a) Top 5 motifs enriched in peaks unique to\nUninjured Myofibers overlapping the promoters")
+p2 <- motif_visualization(paste0(motif_dir, "i_motifs.rds"), plot_title="(b) Top 5 motifs enriched in peaks unique to\nInjured Myofibers overlapping the promoters")
+
+p3 <- motif_visualization(paste0(motif_dir, "wt_motifs.rds"), plot_title="(c) Top 5 motifs enriched in peaks unique\nto WT Myofibers overlapping the promoters")
+p4 <- motif_visualization(paste0(motif_dir, "mdx_motifs.rds"), plot_title="(d) Top 5 motifs enriched in peaks unique\nto MDX Myofibers overlapping the promoters")
+
+combined <- (p1 + p2) / plot_spacer() / (p3 + p4) +  plot_layout(heights = c(1, 0.02, 1))
+    combined
+```
+
+*Supplementary Figure 1: Top 5 enriched motifs in ATAC-Seq peaks overlapping the promoter regions (±5 kb) and unique to (a) Uninjured Myofibers, (b) Injured Myofibers, (c) WT Myofibers, (d) MDX Myofibers.*
 
 ## Session Information
 
