@@ -26,7 +26,7 @@ Our pipeline covers the full pre-processing of raw ATAC-seq data, including qual
 
 At first, all necessary packages were installed and loaded. Information on the package versions used can be found in the Appendix.
 
-```{r}
+```{r load packages}
 suppressPackageStartupMessages({
   library(GenomicRanges)
   library(rtracklayer)
@@ -83,13 +83,9 @@ In order to generate all the data needed downstream (peaks, counts, coverage tra
 
 Raw `.sra` files were converted to `.fastq.gz`, followed by adapter trimming using the `trimmomatic` package. Specifically, Illumina NexteraPE-PE adapters were removed. Quality control was performed both before and after trimming using `FastQC` and summarized with `MultiQC`.
 
-knitr::include_graphics(c("images/fastqc_adapter_content_plot.png", "images/fastqc_adapter_content_plot_post.png"))
-
 ### 2. Alignment
 
 Trimmed reads were aligned to the mm10 mouse genome using `bowtie2`, followed by filtering, sorting, and indexing with `samtools`. Only uniquely mapping reads were retained. The `.bam` files were then filtered for high-quality, uniquely mapped reads (MAPQ ≥ 20), and PCR duplicates were removed using `Picard`. Read groups were added to comply with downstream processing tools. Final sorting and indexing was performed with `samtools`.
-
-knitr::include_graphics("images/alignment_stats.png")
 
 ### 3. Peak calling
 
@@ -198,7 +194,9 @@ hm <- epiwraps::plotEnrichedHeatmaps(tss_matrix, trim = 0.95, colors = c("white"
 draw(hm, column_title = title)
 ```
 
-The heatmap shows a clear enrichment of ATAC-seq signal at transcription start sites (TSS), indicating that chromatin accessibility is highest near gene promoters. This pattern confirms the expected biological behavior, where regulatory elements around the TSS are more open and accessible for transcription machinery binding. The slight upstream shift of the peaks suggests that many transcription factors preferentially bind just before the TSS.
+*Fig. 1: Heatmap showing the ATAC-seq signal around the transcription start sites (TSS) of uninjured, injured, WT, and MDX myofibers.*
+
+The heatmap shows a clear enrichment of ATAC-seq signal at transcription start sites, indicating that chromatin accessibility is highest near gene promoters. This pattern confirms the expected biological behavior, where regulatory elements around the TSS are more open and accessible for transcription machinery binding. The slight upstream shift of the peaks suggests that many transcription factors preferentially bind just before the TSS.
 
 ## Replicate Comparison and Clustering
 
@@ -294,6 +292,8 @@ grid.arrange(
 
 ```
 
+*Fig. 2: Heatmaps of Pearson correlation coefficients based on normalized ATAC-seq counts, illustrating the correlation between replicates in the Uninjured vs. Injured comparison (left) and the WT vs. MDX comparison (right).*
+
 Overall, the Pearson correlation is very high for all samples, with correlation coefficients consistently above 0.95 regardless of condition. In the Uninjured vs. Injured experiment, the injured replicates clearly cluster more closely together than with the uninjured ones. However, the uninjured replicates appear more similar to the injured samples than to the other uninjured replicate. For the MDX vs. WT experiment, there is no clear difference in correlation between replicates of the same condition compared to samples from the other condition.
 
 ### Principal Component Analysis (PCA)
@@ -369,6 +369,8 @@ annotate_figure(
 
 ```
 
+*Fig. 3: Principal component analysis (PCA) plot showing samples along the first two principal components for Uninjured vs. Injured (left) and MDX vs. WT (right).*
+
 In the PCA plots, samples clearly separate based on their experimental conditions, indicating distinct chromatin accessibility profiles.
 
 ### Hierarchical Clustering between replicates
@@ -391,7 +393,7 @@ plot_hclust <- function(norm_signal, plot_title) {
 # Set up plotting area to have 1 row and 2 columns for side-by-side plots
 # Adjust outer margins (oma) to provide space for the overall title above both plots
 # Adjust inner margins (mar) to fit axis labels and titles nicely
-par(mfrow = c(1, 2), oma = c(1, 1, 4, 1), mar = c(4, 4, 2, 1))
+par(mfrow = c(1, 2), oma = c(1, 1, 2.2, 1), mar = c(4, 4, 1, 1))
 
 # Generate hierarchical clustering dendrograms for both datasets
 hc1 <- plot_hclust(norm_counts1, "Uninjured vs. Injured")
@@ -405,11 +407,13 @@ par(mfrow = c(1, 1), oma = c(0, 0, 0, 0))
 
 ```
 
+*Fig. 4: Hierarchical clustering dendrograms of normalized ATAC-seq counts showing sample relationships for Uninjured vs. Injured (left) and MDX vs. WT (right) conditions.*
+
 As noted in the Pearson Correlation Heatmaps, the injured replicates cluster tightly together, while the uninjured replicates do not cluster as closely with each other and instead appear closer to the injured samples. In the MDX vs. WT comparison, replicates do not consistently cluster together by condition.
 
 ## Differential accessibility analysis
 
-```{r}
+```{r differential accessibility analysis, warning=FALSE}
 # Function to run the differential accessibility analysis
 run_deseq2 <- function(count_mat, baseline_condition, contrast_condition, name = "") {
   # 1. Convert to numeric matrix
@@ -450,6 +454,8 @@ run_deseq2 <- function(count_mat, baseline_condition, contrast_condition, name =
   
   # 10. Adjust p-values and clip them
   res_df$padj <- p.adjust(res_df$pvalue, method = "BH")
+  
+  # Clip p-value of one particularly high outlier to reduce visual distortion
   res_df$padj <- ifelse(res_df$padj < 1e-10, 1e-10, res_df$padj)
   
   # 11. Mark significant genes
@@ -466,6 +472,7 @@ res2 <- run_deseq2(counts2[, 6:ncol(counts2)], baseline_condition = "WT", contra
 
 
 # Function to annotate the peaks (distance to nearest gene)
+# We are using the Ensembl annotation because it directly provides gene names and biotypes. However, we reformat it to match UCSC-style chromosome names. Two genes are on unknown chromosomes and do not match; we set their annotations to NA.
 annotate <- function(counts) {
   # Get all protein-coding genes as GRanges 
   genes_gr <- genes(ensdb, filter = TxBiotypeFilter("protein_coding"))
@@ -482,7 +489,7 @@ annotate <- function(counts) {
   
   # Identify common chromosomes
   common_chrs <- intersect(seqlevels(peak_gr), seqlevels(genes_gr))
-  print(common_chrs)
+  
   # Keep only shared chromosomes and store their original indices
   keep_idx <- which(seqnames(peak_gr) %in% common_chrs)
   peak_gr_filtered <- peak_gr[keep_idx]
@@ -528,15 +535,18 @@ annotate <- function(counts) {
 significant_peaks1 <- rownames(res1[res1$significant == "Significant", ])
 significant_peaks2 <- rownames(res2[res2$significant == "Significant", ])
 
+# Print summary message
+cat("DESeq2 identified", length(significant_peaks1), "significantly differentially accessible regions (FDR < 0.05 and |LFC| ≥ 1) between uninjured and injured myofibers, and", length(significant_peaks2), "significantly differentially accessible regions between WT and MDX.\n")
+
 # Subset count matrix based on significant peaks (has information on the peaks)
 counts1_sig <- counts1[rownames(counts1) %in% significant_peaks1, ]
 counts2_sig <- counts2[rownames(counts2) %in% significant_peaks2, ]
 
 # Annotate the count matrix
 counts1_sig <- annotate(counts1_sig)
-print(head(counts1_sig))
+#print(head(counts1_sig))
 counts2_sig <- annotate(counts2_sig)
-print(head(counts1_sig))
+#print(head(counts1_sig))
 
 # Subset results based on significant peaks
 res1_sig <- res1[rownames(res1) %in% significant_peaks1, ]
@@ -549,12 +559,12 @@ res2_annot <- merge(res2_sig, counts2_sig[, c("peak", "nearest_gene", "gene_id",
 # Combine the annotated significant results
 combined_annot <- rbind(res1_annot, res2_annot)
 
-# Select top 7 by significance (lowest padj) per method
-top7_annotated <- combined_annot %>%
+# Select top 6 by significance (lowest padj) per method
+top6_annotated <- combined_annot %>%
   filter(!is.na(padj)) %>%
   arrange(padj) %>%
   group_by(method) %>%
-  slice_head(n = 7) %>%
+  slice_head(n = 6) %>%
   ungroup()
 
 # Combine the all results
@@ -576,9 +586,9 @@ volcano_combined <- ggplot(combined_res, aes(x = logFC, y = -log10(padj))) +
     strip.text = element_text(size = 12)
   ) +
   geom_text_repel(
-    data = top7_annotated,
+    data = top6_annotated,
     aes(label = annotation),
-    color = "gray20",
+    color = "maroon",
     size = 3,
     max.overlaps = Inf,          # show all selected labels
     box.padding = 0.5,           # more space around label
@@ -595,6 +605,14 @@ volcano_combined <- ggplot(combined_res, aes(x = logFC, y = -log10(padj))) +
 
 print(volcano_combined)
 ```
+
+*Fig. 5: Volcano plots of differential chromatin accessibility between conditions for Uninjured vs. Injured (left) and WT vs. MDX (right). Points represent peaks colored by significance, with top significant peaks labeled by their nearest gene and distance to that gene.*
+
+The volcano plot comparing Uninjured vs. Injured samples shows much larger log-fold changes, indicating stronger shifts in accessibility for individual regions. In contrast, the WT vs. MDX comparison reveals a higher number of significantly differentially accessible regions overall, despite generally smaller fold changes.
+
+One gene, Rftn1, stood out in the WT vs. MDX comparison with extremely high upregulation and statistical significance. Its p-value was clipped in the plot to maintain visual clarity. Such genes, which exhibit both strong effect size and high significance, could be of interest for follow-up studies.
+
+Interestingly, for the Uninjured vs. Injured comparison, the annotated differentially accessible regions in our volcano plot differ entirely from those highlighted in the paper, suggesting potential differences in methods.
 
 ## Gene set enrichment analysis
 
@@ -764,7 +782,7 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
     For brevity, only the ‘common’ peak comparisons are shown here. Motif logo plots for the unique uninjured, unique injured, unique WT, and unique MDX sets are available in Appendix.
 
-    ```{r, fig.width=10, fig.height=10, dpi=150}
+    ```{r, fig.width=8, fig.height=8, dpi=150}
     ## Function to visualize motifs
     motif_visualization <- function(file_name, overlap_val=0.99, plot_title){
       res <- readRDS(file_name)
@@ -814,7 +832,7 @@ Limitations:
 
 # Appendix
 
-```{r, fig.width=10, fig.height=10, dpi=150}
+```{r, fig.width=8, fig.height=8, dpi=150}
 motif_visualization(paste0(motif_dir, "ui_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to Uninjured Myofibers\noverlapping the promoters")
 motif_visualization(paste0(motif_dir, "i_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to Injured Myofibers\noverlapping the promoters")
 
@@ -822,7 +840,7 @@ motif_visualization(paste0(motif_dir, "wt_motifs.rds"), plot_title="Top 5 motifs
 motif_visualization(paste0(motif_dir, "mdx_motifs.rds"), plot_title="Top 5 motifs enriched in peaks unique to MDX Myofibers\noverlapping the promoters")
 ```
 
-```{python}
+```{python, eval=FALSE}
 pip install pandas matplotlib seaborn
 
 import pandas as pd
@@ -849,6 +867,7 @@ ax.set_title('Alignment summary')
 plt.tight_layout()
 plt.show()
 ```
+
 ## Session Information
 
 ```{r}
