@@ -701,12 +701,6 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
     peaks <- lapply(peakfiles, FUN=rtracklayer::import, format="narrowPeak")
     peaks <- lapply(peaks, clean_seqlevels)
 
-    ## Function to clean granges
-    clean_seqlevels <- function(granges){
-      granges <- keepSeqlevels(granges, common_seqlevels, pruning.mode = "coarse")
-      return(granges)
-    }
-
     ## Function to obtain common and unique peaks between two GRanges objects
     obtain_peaks <- function(cond1, cond2){
       # Find overlaps
@@ -842,7 +836,7 @@ knitr::include_graphics("images/enriched_motifs_comparison.png")
 Limitations:
 
 1.  We used a naive‐overlap approach to define peaks for each condition, which yields the most robust and reproducible regions but may miss true binding sites that are variable across replicates. In future work, applying an Irreproducible Discovery Rate (IDR) framework could capture a more confident and reproducible set of peaks [@ATACseqDataStandards].
-2.  By default, MEME’s AME tool does not correct for GC‐content bias when generating its background model. Since promoter regions (±5 kb of TSS) are inherently GC‐rich, this omission can inflate enrichment statistics for GC‐rich motifs [@heinzSimpleCombinationsLineageDetermining2010]. This is consistent with our results (Fig. 7 and Supplementary Fig. 1), where most identified motifs exhibit high GC content. To address this, future analyses should employ a custom, GC‐matched background when running AME.
+2.  By default, MEME’s AME tool does not correct for GC‐content bias when generating its background model. Since promoter regions (±5 kb of TSS) are inherently GC‐rich, this omission can inflate enrichment statistics for GC‐rich motifs [@heinzSimpleCombinationsLineageDetermining2010]. Indeed, our results identified several GC-rich motifs (Fig. 7, Supplementary Fig. 1), suggesting a potential bias. To address this, future analyses should employ a GC-matched background (e.g., using chromVAR) when running AME.
 
 # Discussion
 
@@ -915,6 +909,5 @@ Packages used to run the following script: 6_coverage.sh
 ```{r}
 env <- yaml::read_yaml("preprocessing/bash_environment/coverage_bash.yml")
 print(env)
-```
 ```
 
