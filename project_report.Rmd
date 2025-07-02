@@ -55,6 +55,7 @@ suppressPackageStartupMessages({
   library(ggrepel)
   library(patchwork)
   library(yaml)
+  library(org.Mm.eg.db)
 })
 ```
 
@@ -100,7 +101,7 @@ knitr::include_graphics("images/alignment_stats.png")
 
 Many reads map to multiple genomic regions, which reduces the number of uniquely aligned reads retained for downstream analysis. As a result, the average unique mapping rate of around 50% is quite low.
 
-### 3. Peak calling
+### 3. Peak Calling
 
 Peaks were called using `MACS3` on each individual `.bam` file, generating `.narrowPeak` files representing regions of open chromatin.
 
@@ -215,7 +216,7 @@ The heatmap shows a clear enrichment of ATAC-seq signal at transcription start s
 
 ### Normalization
 
-The raw count data was then normalized using the regularized log (rlog) transformation from the DESeq2 package, which stabilizes variance across samples, especially for genes with low counts.
+The raw count data was then normalized using the regularized log (rlog) transformation from the `DESeq2` package, which stabilizes variance across samples, especially for genes with low counts.
 
 ```{r normalization}
 # Function to normalize count data using rlog transformation from DESeq2
@@ -257,7 +258,7 @@ norm_counts2 <- process_mat(counts2)
 #head(norm_counts2)
 ```
 
-### Pearson correlation heatmaps
+### Pearson Correlation Heatmaps
 
 Pearson correlation heatmaps were generated from the normalized count data to evaluate the similarity between replicates within each experimental condition.
 
@@ -386,7 +387,9 @@ annotate_figure(
 
 In the PCA plots, samples clearly separate based on their experimental conditions, indicating distinct chromatin accessibility profiles.
 
-### Hierarchical Clustering between replicates
+### Hierarchical Clustering between Replicates
+
+Hierarchical clustering was performed on normalized accessibility signals to assess the similarity between biological replicates.
 
 ```{r hierarchical clustering, fig.width=8, fig.height=4,  fig.align='center'}
 # HIERARCHICAL CLUSTERING
@@ -424,9 +427,11 @@ par(mfrow = c(1, 1), oma = c(0, 0, 0, 0))
 
 As noted in the Pearson Correlation Heatmaps, the injured replicates cluster tightly together, while the uninjured replicates do not cluster as closely with each other and instead appear closer to the injured samples. In the MDX vs. WT comparison, replicates do not consistently cluster together by condition.
 
-## Differential accessibility analysis
+## Differential Accessibility Analysis
 
-```{r differential accessibility analysis, warning=FALSE, fig.align='center'}
+Differential accessibility analysis was performed using `DESeq2`, where counts from each experiment were compared by setting one condition as the baseline (Uninjured or WT) and testing for differences in accessibility against the contrasting condition (Injured or MDX).
+
+```{r differential accessibility analysis}
 # Function to run the differential accessibility analysis
 run_deseq2 <- function(count_mat, baseline_condition, contrast_condition, name = "") {
   # 1. Convert to numeric matrix
@@ -483,106 +488,110 @@ res1 <- run_deseq2(counts1[, 6:ncol(counts1)], baseline_condition = "Uninjured",
 # Experiment 2 - WT vs. MDX: baseline = "WT"
 res2 <- run_deseq2(counts2[, 6:ncol(counts2)], baseline_condition = "WT", contrast_condition = "MDX", name = "WT vs. MDX")
 
-
-# Function to annotate the peaks (distance to nearest gene)
-# We are using the Ensembl annotation because it directly provides gene names and biotypes. However, we reformat it to match UCSC-style chromosome names. Two genes are on unknown chromosomes and do not match; we set their annotations to NA.
-annotate <- function(counts) {
-  # Get all protein-coding genes as GRanges 
-  genes_gr <- genes(ensdb, filter = TxBiotypeFilter("protein_coding"))
-  
-  # Convert counts peaks to GRanges
-  peak_gr <- GRanges(
-    seqnames = counts$Chr,
-    ranges = IRanges(start = counts$Start, end = counts$End),
-    strand = "*"
-  )
-  
-  # Use UCSC style for genes to match counts ("1" --> "chr1")
-  seqlevelsStyle(genes_gr) <- "UCSC"
-  
-  # Identify common chromosomes
-  common_chrs <- intersect(seqlevels(peak_gr), seqlevels(genes_gr))
-  
-  # Keep only shared chromosomes and store their original indices
-  keep_idx <- which(seqnames(peak_gr) %in% common_chrs)
-  peak_gr_filtered <- peak_gr[keep_idx]
-  genes_gr <- keepSeqlevels(genes_gr, common_chrs, pruning.mode = "coarse")
-  
-  # Find nearest gene indices for filtered peaks
-  nearest_genes_idx <- nearest(peak_gr_filtered, genes_gr)
-  nearest_genes <- genes_gr[nearest_genes_idx]
-  distances <- distance(peak_gr_filtered, nearest_genes)
-  
-  gene_names <- mcols(nearest_genes)$gene_name
-  gene_ids <- names(nearest_genes)
-  
-  # Initialize annotation vectors with NA for all original peaks
-  nearest_gene_vec <- rep(NA_character_, length(peak_gr))
-  gene_id_vec <- rep(NA_character_, length(peak_gr))
-  distance_vec <- rep(NA_integer_, length(peak_gr))
-  annotation_vec <- rep(NA_character_, length(peak_gr))
-  
-  # Fill in values only for kept peaks
-  nearest_gene_vec[keep_idx] <- gene_names
-  gene_id_vec[keep_idx] <- gene_ids
-  distance_vec[keep_idx] <- distances
-  
-  # Create annotation string: gene name + signed distance in bp
-  annotation_vec[keep_idx] <- ifelse(
-    distances >= 0,
-    paste0(gene_names, "+", distances, " bp"),
-    paste0(gene_names, distances, " bp")  # distances already negative
-  )
-  
-  # Add annotation columns back to counts data frame
-  annotated_counts <- counts
-  annotated_counts$nearest_gene <- nearest_gene_vec
-  annotated_counts$gene_id <- gene_id_vec
-  annotated_counts$distance_to_gene <- distance_vec
-  annotated_counts$annotation <- annotation_vec
-  annotated_counts$peak <- rownames(counts)
-  
-  return(annotated_counts)
-}
 # Get significant peak IDs
 significant_peaks1 <- rownames(res1[res1$significant == "Significant", ])
 significant_peaks2 <- rownames(res2[res2$significant == "Significant", ])
 
 # Print summary message
 cat("DESeq2 identified", length(significant_peaks1), "significantly differentially accessible regions (FDR < 0.05 and |LFC| ≥ 1) between uninjured and injured myofibers, and", length(significant_peaks2), "significantly differentially accessible regions between WT and MDX.\n")
+```
 
-# Subset count matrix based on significant peaks (has information on the peaks)
-counts1_sig <- counts1[rownames(counts1) %in% significant_peaks1, ]
-counts2_sig <- counts2[rownames(counts2) %in% significant_peaks2, ]
+Next, peaks were annotated by mapping them to the nearest genes using `UCSC mm10` annotations from `AnnotationHub`. For each peak, the closest gene, its Entrez ID, gene symbol, and distance to the peak were identified.
 
-# Annotate the count matrix
-counts1_sig <- annotate(counts1_sig)
-#print(head(counts1_sig))
-counts2_sig <- annotate(counts2_sig)
-#print(head(counts1_sig))
+```{r annotation}
+# Query for UCSC annotations for mouse
+# Note this time we didn't need the biotype, so we used the matching UCSC annotations
+q <- AnnotationHub::query(ah, c("Mus musculus", "UCSC", "mm10", "TxDb"))
 
-# Subset results based on significant peaks
-res1_sig <- res1[rownames(res1) %in% significant_peaks1, ]
-res2_sig <- res2[rownames(res2) %in% significant_peaks2, ]
+# Retrieve metadata for all available versions
+meta <- mcols(q)[, c("rdatadateadded", "title", "genome", "tags", "rdatapath")]
 
-# Merge the annotations to the reults
-res1_annot <- merge(res1_sig, counts1_sig[, c("peak", "nearest_gene", "gene_id", "distance_to_gene","annotation")], by = "peak", all.x = TRUE)
-res2_annot <- merge(res2_sig, counts2_sig[, c("peak", "nearest_gene", "gene_id", "distance_to_gene","annotation")], by = "peak", all.x = TRUE)
+# Select the newest version
+txdb <- ah[["AH75762"]]
+
+# Function to annotate our peaks (distance to closest gene & its name/Id)
+annotate <- function(counts) {
+  # 1. Retrieve all genes, including those spanning multiple strands or chromosomes
+  genes_gr <- unlist(genes(txdb, single.strand.genes.only = FALSE))
+  
+  # 2. Convert peak coordinates in counts data frame to GRanges object
+  peak_gr <- GRanges(
+    seqnames = counts$Chr,
+    ranges = IRanges(start = counts$Start, end = counts$End),
+    strand = "*"
+  )
+  
+  # 3. Find nearest gene indices for filtered peaks (may contain NAs)
+  nearest_genes_idx <- nearest(peak_gr, genes_gr)
+  
+  # 4. Create the output data frame, starting from counts and adding columns
+  annotated_counts <- counts
+  annotated_counts[, c("nearest_gene", "gene_id", "distance_to_gene", 
+                       "annotation")] <- NA
+  annotated_counts$peak <- rownames(counts)
+
+  # 5. Process only peaks that have a nearest gene assigned
+  valid <- !is.na(nearest_genes_idx)
+  
+  nearest_idx_valid <- nearest_genes_idx[valid]
+  peak_idx_valid <- which(valid)   # Fix: use which() here instead of keep_idx
+  
+  nearest_genes <- genes_gr[nearest_idx_valid]
+  distances <- distance(peak_gr[peak_idx_valid], nearest_genes)
+  
+  # 6. Extract Entrez gene IDs from nearest genes
+  gene_ids <- names(nearest_genes)
+  
+  # 7. Map Entrez IDs to gene symbols (names)
+  gene_symbols <- mapIds(org.Mm.eg.db,
+                         keys = gene_ids,
+                         column = "SYMBOL",
+                         keytype = "ENTREZID",
+                         multiVals = "first")
+  
+  # 8. Fill in annotations into the data frame
+  annotated_counts$nearest_gene[peak_idx_valid] <- gene_symbols
+  annotated_counts$nearest_gene[peak_idx_valid] <- gene_symbols
+  annotated_counts$gene_id[peak_idx_valid] <- gene_ids
+  annotated_counts$distance_to_gene[peak_idx_valid] <- distances
+  annotated_counts$annotation[peak_idx_valid] <- ifelse(
+    distances >= 0,
+    paste0(gene_symbols, "+", distances, " bp"),
+    paste0(gene_symbols, distances, " bp")
+  )
+  
+  return(annotated_counts)
+}
+
+# Annotate the count matrices
+counts1_ann = annotate(counts1)
+counts2_ann = annotate(counts2)
+
+# Merge the annotations to the results
+res1_ann <- merge(res1, counts1_ann[, c("peak", "Chr", "Start", "End", "nearest_gene", "gene_id", "distance_to_gene","annotation")], by = "peak", all.x = TRUE)
+res2_ann <- merge(res2, counts2_ann[, c("peak", "Chr", "Start", "End", "nearest_gene", "gene_id", "distance_to_gene","annotation")], by = "peak", all.x = TRUE)
 
 # Combine the annotated significant results
-combined_annot <- rbind(res1_annot, res2_annot)
+combined_res <- rbind(res1_ann, res2_ann)
 
 # Select top 6 by significance (lowest padj) per method
-top6_annotated <- combined_annot %>%
+top6_annotated <- combined_res %>%
   filter(!is.na(padj)) %>%
   arrange(padj) %>%
   group_by(method) %>%
   slice_head(n = 6) %>%
   ungroup()
 
-# Combine the all results
-combined_res <- rbind(res1, res2)
+# Print summary message
+cat("Nearest genes were assigned to", sum(!is.na(combined_res$gene_id)), "peaks. For", sum(is.na(combined_res$nearest_gene)) - sum(is.na(combined_res$gene_id)),
+"peaks, only a gene ID is available without a corresponding gene name.",
+sum(is.na(combined_res$annotation)), "peaks remain unannotated.\n")
 
+```
+
+The differential accessibility results were visualized using volcano plots, displaying log2 fold changes against the FDR-adjusted p-values. Significant peaks were highlighted, and the top annotated peaks were labeled for clearer interpretation.
+
+```{r volcano plot, fig.align='center'}
 # Create volcano plot with annotation labels
 volcano_combined <- ggplot(combined_res, aes(x = logFC, y = -log10(padj))) +
   geom_point(aes(color = significant), alpha = 0.7, size = 1) +
@@ -627,9 +636,9 @@ One gene, Rftn1, stood out in the WT vs. MDX comparison with extremely high upre
 
 Interestingly, for the Uninjured vs. Injured comparison, the annotated differentially accessible regions in our volcano plot differ entirely from those highlighted in the paper, suggesting potential differences in methods.
 
-## Gene set enrichment analysis
+## Gene Set Enrichment Analysis
 
-## Motif enrichment analysis
+## Motif Enrichment Analysis
 
 We performed motif enrichment analysis to identify top motifs that are enriched in peaks around the promoter regions. This was performed with the following steps:
 
@@ -899,15 +908,17 @@ sessionInfo()
 ```
 
 ## Bash Packages
+
 Packages used to run the following scripts: 1_trim.sh, 2_align.sh, 3_merge_bam.sh, 4_peak_calling.sh, 5_condition_peaks.sh, 7_matrix_gen.sh
+
 ```{r}
 env <- yaml::read_yaml("preprocessing/bash_environment/main_bash.yml")
 print(env)
 ```
 
 Packages used to run the following script: 6_coverage.sh
+
 ```{r}
 env <- yaml::read_yaml("preprocessing/bash_environment/coverage_bash.yml")
 print(env)
 ```
-
