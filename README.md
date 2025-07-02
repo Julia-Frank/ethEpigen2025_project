@@ -1,5 +1,8 @@
 # ethEpigen2025_project
 
+# File Overview
+All results are included in the main files (project_report.Rmd and project_report.html).  Since preprocessing is quite computationally and memory intensive, we performed it on Euler. All code scripts and resulting data are available in the `preprocessing` folder. The coverage tracks were too large for GitHub, so we uploaded them to [OneDrive](https://1drv.ms/f/c/ad47ab1cb526b6da/EiGJACKkCqhAqehU3_HI-AMBXvwKSJhkNprIwYIos2Fupg?e=tbCstp). If you want to rerun the R script, please download the coverage tracks and place them in `preprocessing`\>`results`\>`tracks`.
+
 # Project proposal
 
 ### **Team:** Julia Frank, Sara Leka and Jesslyn Jesslyn
@@ -20,9 +23,3 @@ Our goal is to compare chromatin accessibility across uninjured, injured, dystro
 
 The paper: <https://pmc.ncbi.nlm.nih.gov/articles/PMC8901173/#abstract1>\
 The data: <https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE173676>
-
-
-# Materials on Github
-## Material to Euler
-This folder contains materials from other courses or resources found online that explain how to use Euler.
-In particular, I found the tutorial from the Systems Genomics course very helpful. It is also available on GitHub: <https://github.com/quadbio/RNAseq_tutorial>.
