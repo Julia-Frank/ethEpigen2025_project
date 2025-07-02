@@ -54,6 +54,7 @@ suppressPackageStartupMessages({
   library(Biostrings)
   library(ggrepel)
   library(patchwork)
+  library(yaml)
 })
 ```
 
@@ -89,7 +90,7 @@ Raw `.sra` files were converted to `.fastq.gz`, followed by adapter trimming usi
 
 ### 2. Alignment
 
-Trimmed reads were aligned to the mm10 mouse genome using `bowtie2`, followed by filtering, sorting, and indexing with `samtools`. Only uniquely mapping reads were retained. The `.bam` files were then filtered for high-quality, uniquely mapped reads (MAPQ ≥ 20), and PCR duplicates were removed using `Picard`. Read groups were added to comply with downstream processing tools. Final sorting and indexing was performed with `samtools`.
+Trimmed reads were aligned to the mm10 mouse genome using `bowtie2`, followed by filtering, sorting, and indexing with `samtools`. Only uniquely mapping reads were retained. The `.bam` files were then filtered for high-quality, uniquely mapped reads (MAPQ ≥ 20), and PCR duplicates were marked using `Picard`. Read groups were added to comply with downstream processing tools. Final sorting and indexing was performed with `samtools`.
 
 ```{r, echo=FALSE, out.width="80%", fig.align='center'}
 knitr::include_graphics("images/alignment_stats.png")
@@ -679,7 +680,7 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
     | Peaks unique to injured Myofibers               | Peaks unique to MDX Myofibers        |
     +-------------------------------------------------+--------------------------------------+
 
-    *Table 1: Peak Categories Across Myofiber Conditions.*
+    *Table 1: Peak categories across myofiber conditions.*
 
     As the paper did not specify how 'common peaks' were defined, we considered peaks to be common if they overlapped by at least 1 bp, and used the intersection of overlapping regions to represent the shared binding sites. While merging nearby peaks could capture broader regions of regulatory activity, we chose this stricter approach for consistency with the fixed-size peaks used in the paper.
 
@@ -902,3 +903,18 @@ combined <- (p1 + p2) / plot_spacer() / (p3 + p4) +  plot_layout(heights = c(1, 
 ```{r}
 sessionInfo()
 ```
+
+## Bash Packages
+Packages used to run the following scripts: 1_trim.sh, 2_align.sh, 3_merge_bam.sh, 4_peak_calling.sh, 5_condition_peaks.sh, 7_matrix_gen.sh
+```{r}
+env <- yaml::read_yaml("preprocessing/bash_environment/main_bash.yml")
+print(env)
+```
+
+Packages used to run the following script: 6_coverage.sh
+```{r}
+env <- yaml::read_yaml("preprocessing/bash_environment/coverage_bash.yml")
+print(env)
+```
+```
+

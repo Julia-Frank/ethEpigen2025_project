@@ -52,7 +52,7 @@ else
       exit 1
   fi
 
-  echo "[$base] Removing duplicates ..."
+  echo "[$base] Mark duplicates ..."
   picard AddOrReplaceReadGroups \
         I=$aligndir/"$base".bam \
         O=$aligndir/"$base".rg.bam \
@@ -76,7 +76,7 @@ else
   if [ -f "$aligndir/"$base".bam.2" ]; then
       mv $aligndir/"$base".bam.2 $aligndir/"$base".bam
   else
-      echo "Duplicate removal failed. Original BAM is preserved."
+      echo "Mark duplicates failed. Original BAM is preserved."
       exit 1
   fi
 
