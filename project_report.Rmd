@@ -43,7 +43,7 @@ suppressPackageStartupMessages({
   library(RColorBrewer)
   library(pheatmap)
   library(gridExtra)
-  #library(ggpubr)
+  library(ggpubr)
   library(grid)
   library(limma)
   library(edgeR)
