@@ -18,9 +18,11 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Introduction
 
-Myofibers are the main structural and functional units of skeletal muscle. They are highly adaptive cells that vary widely in size, metabolic activity, and functional properties. This adaptability is reflected in their transcriptomic and epigenomic landscapes, which can shift significantly in response to physiological and pathological conditions. Understanding these regulatory changes offers insights into how skeletal muscle adapts, regenerates, and deteriorates under different conditions.\
+Myofibers are the main structural and functional units of skeletal muscle. They are highly adaptive cells that vary widely in size, metabolic activity, and functional properties. This adaptability is reflected in their transcriptomic and epigenomic landscapes, which can shift significantly in response to physiological and pathological conditions. Understanding these regulatory changes offers insights into how skeletal muscle adapts, regenerates, and deteriorates under different conditions.
+
 In this context, ATAC-seq data is a powerfool tool to study chromatin accessibility. When applied to single myofibers, this technique provides sufficient resolution and depth for downstream epigenetic analysis without the presence of confounding muscle resident cell types. This approach was conducted in the study "Application of ATAC-Seq for genome-wide analysis of the chromatin state at single myofiber resolution" by [@sahinyan2022atac]. In their work, they used single-myofiber ATAC-seq (smfATAC-seq) to profile chromatin accessibility in myofibers under various physiological and disease conditions.\
-The aim of our project is to reproduce and critically evaluate key aspects of that study. We focus on two biologically relevant comparisons: uninjured (UI) vs. injured (I) myofibers, and wild-type (WT) vs. dystrophic (MDX) myofibers. The UI vs. I comparison allows us to explore how myofibers change their chromatin landscape during regeneration following cardiotoxin-induced injury. The WT vs. MDX comparison highlights the epigenomic consequences of Duchenne Muscular Dystrophy (DMD), for which the MDX mouse serves as a widely used model.\
+The aim of our project is to reproduce and critically evaluate key aspects of that study. We focus on two biologically relevant comparisons: uninjured (UI) vs. injured (I) myofibers, and wild-type (WT) vs. dystrophic (MDX) myofibers. The UI vs. I comparison allows us to explore how myofibers change their chromatin landscape during regeneration following cardiotoxin-induced injury. The WT vs. MDX comparison highlights the epigenomic consequences of Duchenne Muscular Dystrophy (DMD), for which the MDX mouse serves as a widely used model.
+
 Our pipeline covers the full pre-processing of raw ATAC-seq data, including quality control, alignment, filtering, peak calling, and normalization. We then assess data quality and consistency through correlation analysis, followed by differential accessibility analysis, gene set enrichment analysis and motif discovery to interpret the biological significance of the observed changes.
 
 # Methods & Results
@@ -62,7 +64,7 @@ suppressPackageStartupMessages({
 
 ## The Data
 
-The pipeline processes single myofiber ATAC-seq data obtained from the Extensor Digitorum Longus (EDL) muscle of *Mus musculus*. The raw data is available through the [SRA Run Selector](https://www.ncbi.nlm.nih.gov/Traces/study/?acc=PRJNA726576&o=acc_s%3Aa) and the authors also provide their processed coverage tracks on [GEO](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE173676).
+The pipeline processes single myofiber ATAC-seq data obtained from the Extensor Digitorum Longus (EDL) muscle of *Mus musculus*. The raw data is available through the [SRA Run Selector](https://www.ncbi.nlm.nih.gov/Traces/study/?acc=PRJNA726576&o=acc_s%3Aa) (SRA accession numbers used are listed in Supplementary Table 1) and the authors also provide their processed coverage tracks on [GEO](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE173676) (GEO accession number GSE173676).
 
 The dataset consists of two distinct and independently conducted experiments, each addressing a separate biological question. The first experiment investigates muscle regeneration by comparing uninjured and injured myofibers. The second focuses on muscular dystrophy by comparing wild-type (WT) and MDX mice, a model for Duchenne Muscular Dystrophy (DMD). These two experiments were performed on different days and used different mouse strains, both of which can introduce batch effects.
 
@@ -116,7 +118,7 @@ For visualization and downstream analyses, normalized bigWig coverage tracks wer
 
 ### 7. Condition Specific Peak Calling
 
-To define reproducible peaks for each condition, we used ENCODE's "naive overlap" approach [@ATACseqDataStandards]. First, we merged the aligned reads from all replicates per condition and called peaks on the pooled data. We then retained only those pooled peaks that overlapped by ≥50 % of their length with peaks from replicates. This filtering step ensures that downstream motif enrichment is based on robust, reproducible peak regions.
+To define reproducible peaks for each condition, we used ENCODE's "naive overlap" approach [@hitzENCODEUniformAnalysis2023] . First, we merged the aligned reads from all replicates per condition and called peaks on the pooled data. We then retained only those pooled peaks that overlapped by ≥50 % of their length with peaks from replicates. This filtering step ensures that downstream motif enrichment is based on robust, reproducible peak regions.
 
 ### 8. Load the Preprocessed Data
 
@@ -227,7 +229,7 @@ The heatmap shows a clear enrichment of ATAC-seq signal at transcription start s
 
 ### Normalization
 
-The raw count data was then normalized using the regularized log (rlog) transformation from the `DESeq2` package, which stabilizes variance across samples, especially for genes with low counts.
+The raw count data was then normalized using the regularized log (rlog) transformation from the `DESeq2` [@loveModeratedEstimationFold2014] package, which stabilizes variance across samples, especially for genes with low counts.
 
 ```{r normalization}
 # Function to normalize count data using rlog transformation from DESeq2
@@ -440,7 +442,7 @@ As noted in the Pearson Correlation Heatmaps, the injured replicates cluster tig
 
 ## Differential Accessibility Analysis
 
-Differential accessibility analysis was performed using `DESeq2`, where counts from each experiment were compared by setting one condition as the baseline (Uninjured or WT) and testing for differences in accessibility against the contrasting condition (Injured or MDX).
+Differential accessibility analysis was performed using `DESeq2` [@loveModeratedEstimationFold2014], where counts from each experiment were compared by setting one condition as the baseline (Uninjured or WT) and testing for differences in accessibility against the contrasting condition (Injured or MDX).
 
 ```{r differential accessibility analysis}
 # Function to run the differential accessibility analysis
@@ -643,13 +645,13 @@ print(volcano_combined)
 
 The volcano plot comparing Uninjured vs. Injured samples shows much larger log-fold changes, indicating stronger shifts in accessibility for individual regions. In contrast, the WT vs. MDX comparison reveals a higher number of significantly differentially accessible regions overall, despite generally smaller fold changes.
 
-One gene, Rftn1, stood out in the WT vs. MDX comparison with extremely high upregulation and statistical significance. Its p-value was clipped in the plot to maintain visual clarity. Such genes, which exhibit both strong effect size and high significance, could be of interest for follow-up studies.
+One gene, Rftn1, stood out in the WT vs. MDX comparison with extremely high upregulation in MDX relative to WT and showed statistical significance. Its p-value was clipped in the plot to maintain visual clarity. Such genes, which exhibit both strong effect size and high significance, could be of interest for follow-up studies.
 
 Interestingly, for the Uninjured vs. Injured comparison, the annotated differentially accessible regions in our volcano plot differ entirely from those highlighted in the paper, suggesting potential differences in methods.
 
 ## Gene Set Enrichment Analysis
 
-Gene set enrichment was carried out with `GREAT`[@guRGREATBioconductorPackage2023] using MSigDB Hallmark gene sets on significant differentially accessible regions (DARs). Instead of using a ranked gene list as in the original paper, we worked directly with genomic intervals to answer the question: *Which hallmark pathways are overrepresented among regions that gain or lose accessibility between conditions?* To adress this, we ran `GREAT` separately on up‑ and down‑regulated DARs (injured compared to uninjured myofibers and MDX compared to WT myofibers), using the union of all consensus peaks as our background.
+Gene set enrichment was carried out with `GREAT`[@guRGREATBioconductorPackage2023] using MSigDB Hallmark gene sets [@castanzaExtendingSupportMouse2023] on significant differentially accessible regions (DARs). Instead of using a ranked gene list as in the original paper, we worked directly with genomic intervals to answer the question: *Which hallmark pathways are overrepresented among regions that gain or lose accessibility between conditions?* To address this, we ran `GREAT` separately on up‑ and down‑regulated DARs (injured compared to uninjured myofibers and MDX compared to WT myofibers), using the union of all consensus peaks for each pair of conditions as our background.
 
 ```{r enrichment analysis, fig.width=15, fig.height=8, dpi=150, fig.align='center', fig.show='hold'}
 # Load MSigDB Hallmark gene sets for subsequent enrichment analysis
@@ -749,11 +751,11 @@ gsea(res2[(res2$significant == 'Significant'),], peaks_bed$consensus_peaks_MDX_W
 
 *Fig. 8: Enrichment analysis of differentially accessible regions (DARs) between WT and MDX myofibers, using consensus peaks as background. Shown are (a) pathways enriched in regions with increased accessibility (upregulated DARs) and (b) pathways enriched in regions with decreased accessibility (downregulated DARs) in MDX relative to WT myofibers.*
 
-As expected, given our region-centric enrichment approach rather than the paper's ranked genes method, the order of enriched pathways differs. Nonetheless, we still observe key inflammatory and injury related pathways (e.g. IL6–JAK–STAT3 [@zhangInterleukin6SignalTransducer2013], Complement activation [@yangSkeletalMuscleRegeneration2018]) among the top 10 upregulated pathways in injured vs uninjured myofibers, consistent with the original findings (Fig. 7).
+As expected, given our region-centric enrichment approach rather than the paper's ranked genes method, the order of enriched pathways differs. Nonetheless, we still observe key inflammatory and injury related pathways (e.g. IL6–JAK–STAT3 [@zhangInterleukin6SignalTransducer2013], Complement activation [@yangSkeletalMuscleRegeneration2018]) among the top 10 upregulated pathways in injured against uninjured myofibers, consistent with the original findings (Fig. 7).
 
-Similarly, as seen in Fig. 8, we observed pathways, such as IL6–JAK–STAT3 [@zhangInterleukin6SignalTransducer2013] and wnt/β-Catenin [@liuActivationWntVCatenin2016], which have been reported to be upregulated in Duchenne’s muscular dystrophy (DMD).
+Similarly, in MDX against WT myofibers (Fig. 8), we observed highly ranked pathways, such as IL6–JAK–STAT3 [@zhangInterleukin6SignalTransducer2013] and wnt/β-Catenin [@liuActivationWntVCatenin2016], that have been previously reported as upregulated in Duchenne’s muscular dystrophy (DMD).
 
-Overall, even though we adopted a region-centric enrichment approach, we still identify key inflammatory and injury related pathways, validating the use of GREAT for GSEA.
+Overall, even though we adopted a region-centric enrichment approach, we still identify key inflammatory and injury related pathways, validating the use of `great` for GSEA.
 
 ## Motif Enrichment Analysis
 
@@ -794,7 +796,7 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
 3.  Prepare peaks
 
-    Next, we prepared the set of peaks that are common and unique between two conditions as defined here:
+    Next, we prepared the set of peaks that are common and unique between two conditions as defined in Table 1.
 
     +-------------------------------------------------+--------------------------------------+
     | Group 1 (Uninjured and injured Myofibers)       | Group 2 (WT and MDX Myofibers)       |
@@ -899,7 +901,7 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
 5.  Visualize top 5 enriched motifs for each set of peaks
 
-    Similar to the paper, we filtered for enriched motifs within each set of peaks with a adjusted p-value less than 0.05 and ranked them based on increasing adjusted p-value.
+    Similar to the paper, we filtered for enriched motifs within each set of peaks with an adjusted p-value less than 0.05 and ordered them based on increasing adjusted p-value.
 
     For brevity, only the ‘common’ peak comparisons are shown here. Motif logo plots for the unique uninjured, unique injured, unique WT, and unique MDX sets are available in Supplementary Fig. 1.
 
@@ -926,7 +928,7 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
     *Fig. 9: Top 5 enriched motifs in ATAC-Seq peaks overlapping the promoter regions (±5 kb) and common to (a) Uninjured and Injured Myofibers, (b) WT and MDX Myofibers.*
 
-    Unfortunately, our results differed from the original paper’s top five enriched motifs and did not show substantial differences in motif enrichment between the different sets of peaks. This discrepancy is likely due to methodological differences between MEME (AME) and HOMER, some of which are outlined below.
+    Unfortunately, our results differed from the original paper’s top five enriched motifs and did not show substantial differences in motif enrichment between the different sets of peaks (Fig. 9, Table 2). This discrepancy is likely due to methodological differences between MEME (AME) and HOMER, some of which are outlined below (Table 3).
 
 ```{r, echo=FALSE, out.width="100%", fig.align='center'}
 
@@ -953,12 +955,12 @@ knitr::include_graphics("images/enriched_motifs_comparison.png")
 
 Limitations:
 
-1.  We used a naive‐overlap approach to define peaks for each condition, which yields a robust and reproducible regions but may miss true binding sites that are variable across replicates. In future work, applying an Irreproducible Discovery Rate (IDR) framework could capture a more confident and reproducible set of peaks [@ATACseqDataStandards].
-2.  By default, MEME’s AME tool does not correct for GC‐content bias when generating its background model. Since promoter regions (±5 kb of TSS) are inherently GC‐rich, this omission can inflate enrichment statistics for GC‐rich motifs [@heinzSimpleCombinationsLineageDetermining2010]. Indeed, our results identified several GC-rich motifs (Fig. 7, Supplementary Fig. 1), suggesting a potential bias. To address this, future analyses should employ a GC-matched background when running AME.
+1.  We used a naive‐overlap approach to define peaks for each condition, which yields a robust and reproducible regions but may miss true binding sites that are variable across replicates. In future work, applying an Irreproducible Discovery Rate (IDR) framework could capture a more confident and reproducible set of peaks for each condition [@hitzENCODEUniformAnalysis2023].
+2.  By default, MEME’s AME tool does not correct for GC‐content bias when generating its background model. Since promoter regions (±5 kb of TSS) are inherently GC‐rich, this omission can inflate enrichment statistics for GC‐rich motifs [@heinzSimpleCombinationsLineageDetermining2010]. Indeed, our results identified several GC-rich motifs (Fig. 9, Supplementary Fig. 1), suggesting a potential bias. To address this, future analyses should employ a GC-matched background when running AME.
 
 # Conclusion
 
-In conclusion, we successfully reproduced and critically evaluated smfATAC‑seq profiling of single myofibers under regenerative (uninjured vs. injured) and dystrophic (WT vs. MDX) conditions. We implemented a complete preprocessing and analysis pipeline, including trimming, alignment, peak calling, consensus peak generation, normalization, differential accessibility testing, region-centric gene set enrichment (GREAT), and MEME-based motif enrichment, while carefully addressing batch effects by analyzing the two experiments separately.
+In conclusion, we successfully reproduced and critically evaluated smfATAC‑seq profiling of single myofibers under regenerative (uninjured vs. injured) and dystrophic (WT vs. MDX) conditions. We implemented a complete preprocessing and analysis pipeline, including trimming, alignment, peak calling, consensus peak generation, normalization, differential accessibility testing, region-centric gene set enrichment (`great`), and MEME-based motif enrichment, while carefully addressing batch effects by analyzing the two experiments separately.
 
 Similar to the findings in the original paper, we observed high correlation between all samples within an experiment, not just between replicates of a single condition. We observed larger accessibility shifts during regeneration but a greater number of subtler changes in the MDX model. Additionally, we identified key inflammatory and injury-related pathways, such as IL6–JAK–STAT3, complement activation, and Wnt/β‑catenin, which align with previous findings and the original paper. Our motif enrichment analysis differed from the original paper, likely because of methodological differences between AME and HOMER and the absence of GC-matched backgrounds. This demonstrates that the choice of analytical tools can influence results, which in turn impacts biological interpretation. Nevertheless, both our analysis and the original paper successfully demonstrated how chromatin accessibility changes under different conditions in smfATAC-seq data.
 
@@ -968,6 +970,25 @@ Similar to the findings in the original paper, we observed high correlation betw
 :::
 
 # Appendix {.unnumbered}
+
+## Supplementary Table 1
+
+| Condition   | SRA Accession Number |
+|-------------|----------------------|
+| Uninjured_1 | SRR14371953          |
+| Uninjured_2 | SRR14371954          |
+| Injured_1   | SRR14371955          |
+| Injured_2   | SRR14371956          |
+| Injured_3   | SRR14371957          |
+| MDX_1       | SRR15343189          |
+| MDX_2       | SRR15343190          |
+| MDX_3       | SRR15343191          |
+| WT_1        | SRR15343192          |
+| WT_2        | SRR15343193          |
+| WT_3        | SRR15343194          |
+| WT_4        | SRR15343195          |
+
+*Supplementary Table 1: SRA Accession Number used in this report with its corresponding condition.*
 
 ## Code for Generating Figure 2 (Main Text)
 
