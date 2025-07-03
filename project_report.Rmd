@@ -56,6 +56,7 @@ suppressPackageStartupMessages({
   library(patchwork)
   library(yaml)
   library(org.Mm.eg.db)
+  library(rGREAT)
 })
 ```
 
@@ -115,7 +116,7 @@ For visualization and downstream analyses, normalized bigWig coverage tracks wer
 
 ### 7. Condition Specific Peak Calling
 
-To define reproducible peaks for each condtion, we used ENCODE's "naive overlap" approach [@ATACseqDataStandards]. First, we merged the aligned reads from all replicates per condition and called peaks on the pooled data. We then retained only those pooled peaks that overlapped by ≥50 % of their length with peaks from replicates. This filtering step ensures that downstream motif enrichment is based on robust, reproducible peak regions.
+To define reproducible peaks for each condition, we used ENCODE's "naive overlap" approach [@ATACseqDataStandards]. First, we merged the aligned reads from all replicates per condition and called peaks on the pooled data. We then retained only those pooled peaks that overlapped by ≥50 % of their length with peaks from replicates. This filtering step ensures that downstream motif enrichment is based on robust, reproducible peak regions.
 
 ### 8. Load the Preprocessed Data
 
@@ -154,6 +155,16 @@ rownames(counts1) <- counts1$Geneid
 counts1$Geneid <- NULL
 rownames(counts2) <- counts2$Geneid
 counts2$Geneid <- NULL
+
+# Load the peak files
+peakfiles <- list.files("preprocessing/results/peaks", full.names = TRUE)
+peaks_bed <- peakfiles[grepl("consensus.*\\.bed$", peakfiles)]
+names(peaks_bed) <- sub("\\.bed$", "", basename(peaks_bed))
+peaks_bed <- lapply(peaks_bed, FUN=rtracklayer::import, format="bed")
+
+peaks_narrow <- peakfiles[grepl("final.*\\.narrowPeak$", peakfiles)]
+names(peaks_narrow) <- gsub("_[^_]+\\..*$","",basename(peaks_narrow))
+peaks_narrow <- lapply(peaks_narrow, FUN=rtracklayer::import, format="narrowPeak")
 
 
 # Look at the data
@@ -638,6 +649,123 @@ Interestingly, for the Uninjured vs. Injured comparison, the annotated different
 
 ## Gene Set Enrichment Analysis
 
+-   Redefine question answered (different from paper)
+    -   Explain rationale for doing so
+    -   how this impacts the analysis
+    -   Difference: gene sets
+-   Unknown chromosomes
+    -   Explain rationale on why we drop the unknown chromosomes
+    -   Explain the possible impact of dropping unknown chromosomes
+
+```{r enrichment analysis, fig.width=15, fig.height=8, dpi=150, fig.align='center', fig.show='hold'}
+# Load MSigDB Hallmark gene sets for subsequent enrichment analysis
+hallmark_list <- read_gmt("mh.all.v2025.1.Mm.entrez.gmt", from = 'ENTREZ', to   = 'ENTREZ')
+
+# Function to extract upregulated and downregulated DARs in GRange
+dars_gr <- function(dars, consensus_peak){
+  # Convert consensus peak into dataframe
+  consensus_peaks <- as.data.frame(consensus_peak)
+  consensus_peaks$peak <- paste0("peak", seq_len(nrow(consensus_peaks)))
+
+  # Assign chr, start and end to DARs
+  dars <- merge(dars, consensus_peaks[, c("peak", "seqnames", "start", "end")], by = "peak", all.x = TRUE)
+
+  # Convert DARs dataframe into GRange
+  dars <- makeGRangesFromDataFrame(dars,
+                                   keep.extra.columns = TRUE,
+                                   ignore.strand = TRUE)
+
+  # Count # of non-standard chromosomes
+  standard_chroms <- paste0("chr", c(1:19, "X", "Y", "M"))
+  non_std <- sum(!(as.character(seqnames(dars)) %in% standard_chroms))
+  print(paste0("Number of peaks with non-standard chromosomes: ", non_std))
+  print(paste0("Number of peaks: ", length(dars)))
+  perc <- round((non_std / length(dars) * 100), 2)
+  print(paste0("Percentage of non-standard chromosomes in consensus peaks of UI and I: ", perc, " %"))
+
+  # Extract upregulated DARs
+  dars_up <- dars[dars$logFC > 0]
+  # Extract downreguated DARs
+  dars_down <- dars[dars$logFC < 0]
+  
+  return(list(up = dars_up, down = dars_down))
+}
+
+# Function to run great on DARs
+run_great <- function(dars_gr, consensus_peak){
+  res <- great(dars_gr, gene_sets=hallmark_list, 
+                   tss_source="mm10", 
+                   background=consensus_peak, cores=4)
+  hm <- getEnrichmentTables(res, min_region_hits = 0)
+  
+  # Sort great results in decreasing enrichment order
+  hm <- hm[order(hm$fold_enrichment, decreasing = TRUE),]
+  
+  return(hm)
+}
+
+# Clean yaxis label function
+clean_label <- function(x) {
+  x %>%
+    str_remove("^HALLMARK_") %>%
+    str_replace_all("_", " ") %>%
+    str_to_title()
+}
+
+plot_formatting <- list(xlab("Fold enrichment"),
+                        ylab("MSigDB Hallmark Gene Sets"),
+                        scale_y_discrete(labels = clean_label),
+                        theme(
+                          axis.text.y = element_text(size = 12),
+                          axis.text.x = element_text(size = 12),
+                          plot.title = element_text(size = 16),
+                          axis.title.x = element_text(size = 14),
+                          axis.title.y = element_text(size = 14),
+                          legend.title = element_text(size = 14),
+                          legend.text = element_text(size = 12)))
+
+# Plot enrichment analysis
+plot_enrichment <- function(hm_up, hm_down){
+  p1 <- ggplot(head(hm_up,10), aes(fold_enrichment, reorder(id, p_adjust), 
+                        size=observed_region_hits, color=-log10(p_adjust))) + 
+    geom_point() + scale_color_viridis_c() +
+    ggtitle("(a) Upregulated pathways") +
+    plot_formatting
+    
+  p2 <- ggplot(head(hm_down,10), aes(fold_enrichment, reorder(id, p_adjust), 
+                        size=observed_region_hits, color=-log10(p_adjust))) + 
+    geom_point() + scale_color_viridis_c() +
+    ggtitle("(b) Downregulated pathways") +
+    plot_formatting
+
+  combined <- p1 + p2 + plot_layout(ncol = 2)
+  return(combined)
+}
+
+# Full GSEA function
+gsea <- function(dars, consensus_peak){
+  dars1 <- dars_gr(dars, consensus_peak)
+  dars_up <- dars1$up
+  dars_down <- dars1$down
+  
+  hm_up <- run_great(dars_up, consensus_peak)
+  hm_down <- run_great(dars_down, consensus_peak)
+  
+  combine_plot <- plot_enrichment(hm_up, hm_down)
+  return(combine_plot)
+}
+
+gsea(res1[(res1$significant == 'Significant'),], peaks_bed$consensus_peaks_UI_I)
+```
+
+*Fig. 7: Enrichment analysis of differentially accessible regions (DARs) between uninjured and injured myofibers, using consensus peaks as background. Shown are (a) pathways enriched in regions with increased accessibility (upregulated DARs) and (b) pathways enriched in regions with decreased accessibility (downregulated DARs) in injured relative to uninjured myofibers.*
+
+```{r enrichment mdx_wt, fig.width=15, fig.height=8, dpi=150, fig.align='center', fig.show='hold'}
+gsea(res2[(res2$significant == 'Significant'),], peaks_bed$consensus_peaks_MDX_WT)
+```
+
+*Fig. 8: Enrichment analysis of differentially accessible regions (DARs) between WT and MDX myofibers, using consensus peaks as background. Shown are (a) pathways enriched in regions with increased accessibility (upregulated DARs) and (b) pathways enriched in regions with decreased accessibility (downregulated DARs) in MDX relative to WT myofibers.*
+
 ## Motif Enrichment Analysis
 
 We performed motif enrichment analysis to identify top motifs that are enriched in peaks around the promoter regions. This was performed with the following steps:
@@ -691,7 +819,7 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
     *Table 1: Peak categories across myofiber conditions.*
 
-    As the paper did not specify how 'common peaks' were defined, we considered peaks to be common if they overlapped by at least 1 bp, and used the intersection of overlapping regions to represent the shared binding sites. While merging nearby peaks could capture broader regions of regulatory activity, we chose this stricter approach for consistency with the fixed-size peaks used in the paper.
+    We merged all peaks across both conditions and defined common peaks as those that appear in both conditions, while unique peaks were defined as those not overlapping any common peak.
 
     Then, we filtered for peaks that overlap with the promoter regions.
 
@@ -702,32 +830,16 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
       return(granges)
     }
 
-    ## List the files:
-    peakfiles <- list.files("preprocessing/results/peaks", full.names = TRUE)
-    peakfiles <- peakfiles[grepl("\\.narrowPeak$", peakfiles)]
-    ## Give them meaningful names
-    names(peakfiles) <- gsub("_[^_]+\\..*$","",basename(peakfiles))
-    peaks <- lapply(peakfiles, FUN=rtracklayer::import, format="narrowPeak")
-    peaks <- lapply(peaks, clean_seqlevels)
-
     ## Function to obtain common and unique peaks between two GRanges objects
     obtain_peaks <- function(cond1, cond2){
-      # Find overlaps
-      hits <- findOverlaps(cond1, cond2)
+      # Find common peaks
+      common_peaks <- GRangesList(list(cond1, cond2))
+      common_peaks <- GenomicRanges::reduce(unlist(common_peaks), with.revmap=TRUE)
+      common_peaks <- common_peaks[which(lengths(common_peaks$revmap)>1)]
       
-      # Common peaks: intersect overlapping regions
-      common_cond1 <- cond1[(queryHits(hits))]
-      common_cond2  <- cond2[(subjectHits(hits))]
-      common_peaks <- pintersect(common_cond1, common_cond2) #since exact peak region used
-      common_peaks <- clean_seqlevels(common_peaks)
-      
-      # Unique peaks for cond1 (non-overlapping)
-      cond1_peaks <- cond1[-unique(queryHits(hits))]
-      cond1_peaks <- clean_seqlevels(cond1_peaks)
-      
-      # Unique peaks for cond2 (non-overlapping)
-      cond2_peaks <- cond2[-unique(subjectHits(hits))]
-      cond2_peaks <- clean_seqlevels(cond2_peaks)
+      # Unique peaks for each condition
+      cond1_peaks <- cond1[!overlapsAny(cond1, common_peaks)]
+      cond2_peaks <- cond2[!overlapsAny(cond2, common_peaks)]
       
       # Return as named list
       return(list(common = common_peaks, peaks1 = cond1_peaks, peaks2 = cond2_peaks))
@@ -783,9 +895,9 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
     Due to difficulties installing MEME on Windows, the motif enrichment analysis chunk has been set to `eval = FALSE`. To rerun the analysis, set `eval = TRUE`.
 
-    ```{r, eval=FALSE}
-    motif_analysis_by_group(peaks$ui_final, peaks$i_final, paste0(motif_dir, "ui_i_motifs.rds"), paste0(motif_dir, "ui_motifs.rds"), paste0(motif_dir, "i_motifs.rds"))
-    motif_analysis_by_group(peaks$mdx_final, peaks$wt_final, paste0(motif_dir, "mdx_wt_motifs.rds"), paste0(motif_dir, "mdx_motifs.rds"), paste0(motif_dir, "wt_motifs.rds"))
+    ```{r motif enrichment, eval=FALSE}
+    motif_analysis_by_group(peaks_narrow$ui_final, peaks_narrow$i_final, paste0(motif_dir, "ui_i_motifs.rds"), paste0(motif_dir, "ui_motifs.rds"), paste0(motif_dir, "i_motifs.rds"))
+    motif_analysis_by_group(peaks_narrow$mdx_final, peaks_narrow$wt_final, paste0(motif_dir, "mdx_wt_motifs.rds"), paste0(motif_dir, "mdx_motifs.rds"), paste0(motif_dir, "wt_motifs.rds"))
     ```
 
 5.  Visualize top 5 enriched motifs for each set of peaks
@@ -794,7 +906,7 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
 
     For brevity, only the ‘common’ peak comparisons are shown here. Motif logo plots for the unique uninjured, unique injured, unique WT, and unique MDX sets are available in Supplementary Fig. 1.
 
-    ```{r, fig.width=14, fig.height=10, dpi=150, fig.align='center', fig.show='hold'}
+    ```{r motif visualization, fig.width=14, fig.height=10, dpi=150, fig.align='center', fig.show='hold'}
     ## Function to visualize motifs
     motif_visualization <- function(file_name, plot_title, overlap_val=0.99){
       res <- readRDS(file_name)
@@ -815,7 +927,7 @@ We performed motif enrichment analysis to identify top motifs that are enriched 
     combined
     ```
 
-    *Fig. 7: Top 5 enriched motifs in ATAC-Seq peaks overlapping the promoter regions (±5 kb) and common to (a) Uninjured and Injured Myofibers, (b) WT and MDX Myofibers.*
+    *Fig. 9: Top 5 enriched motifs in ATAC-Seq peaks overlapping the promoter regions (±5 kb) and common to (a) Uninjured and Injured Myofibers, (b) WT and MDX Myofibers.*
 
     Unfortunately, our results differed from the original paper’s top five enriched motifs and did not show substantial differences in motif enrichment between the different sets of peaks. This discrepancy is likely due to methodological differences between MEME (AME) and HOMER, some of which are outlined below.
 
@@ -845,7 +957,7 @@ knitr::include_graphics("images/enriched_motifs_comparison.png")
 Limitations:
 
 1.  We used a naive‐overlap approach to define peaks for each condition, which yields the most robust and reproducible regions but may miss true binding sites that are variable across replicates. In future work, applying an Irreproducible Discovery Rate (IDR) framework could capture a more confident and reproducible set of peaks [@ATACseqDataStandards].
-2.  By default, MEME’s AME tool does not correct for GC‐content bias when generating its background model. Since promoter regions (±5 kb of TSS) are inherently GC‐rich, this omission can inflate enrichment statistics for GC‐rich motifs [@heinzSimpleCombinationsLineageDetermining2010]. Indeed, our results identified several GC-rich motifs (Fig. 7, Supplementary Fig. 1), suggesting a potential bias. To address this, future analyses should employ a GC-matched background (e.g., using chromVAR) when running AME.
+2.  By default, MEME’s AME tool does not correct for GC‐content bias when generating its background model. Since promoter regions (±5 kb of TSS) are inherently GC‐rich, this omission can inflate enrichment statistics for GC‐rich motifs [@heinzSimpleCombinationsLineageDetermining2010]. Indeed, our results identified several GC-rich motifs (Fig. 7, Supplementary Fig. 1), suggesting a potential bias. To address this, future analyses should employ a GC-matched background when running AME.
 
 # Discussion
 
