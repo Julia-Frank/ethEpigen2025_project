@@ -676,12 +676,12 @@ dars_gr <- function(dars, consensus_peak){
                                    ignore.strand = TRUE)
 
   # Count # of non-standard chromosomes
-  standard_chroms <- paste0("chr", c(1:19, "X", "Y", "M"))
-  non_std <- sum(!(as.character(seqnames(dars)) %in% standard_chroms))
-  print(paste0("Number of peaks with non-standard chromosomes: ", non_std))
-  print(paste0("Number of peaks: ", length(dars)))
-  perc <- round((non_std / length(dars) * 100), 2)
-  print(paste0("Percentage of non-standard chromosomes in consensus peaks of UI and I: ", perc, " %"))
+  # standard_chroms <- paste0("chr", c(1:19, "X", "Y", "M"))
+  # non_std <- sum(!(as.character(seqnames(dars)) %in% standard_chroms))
+  # print(paste0("Number of peaks with non-standard chromosomes: ", non_std))
+  # print(paste0("Number of peaks: ", length(dars)))
+  # perc <- round((non_std / length(dars) * 100), 2)
+  # print(paste0("Percentage of non-standard chromosomes in consensus peaks of UI and I: ", perc, " %"))
 
   # Extract upregulated DARs
   dars_up <- dars[dars$logFC > 0]
